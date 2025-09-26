@@ -1,86 +1,65 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
-import helmet from "helmet";
-import rateLimit from "express-rate-limit";
+
+// Importar rutas
 import consentimientosRoutes from "./routes/consentimiento.js";
 import consentimientosFirmadosRoutes from "./routes/consentimientosFirmados.js";
 import generarPdfRoutes from "./routes/generar-pdf.js";
 import profesionalesRoutes from "./routes/profesionales.js";
-import accessIntegrationRoutes from "./routes/access-integration.js";
-import pool from "./db.js";
+import accessIntegrationRoutes from "./routes/acces-integration.js";
 
 dotenv.config();
 
 const app = express();
 
-// Configuración de rate limiting
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000,
-  max: 1000
-});
+// Middlewares básicos
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
-// Middlewares de seguridad
-app.use(helmet({
-  contentSecurityPolicy: false,
-  crossOriginEmbedderPolicy: false
-}));
-
-app.use(limiter);
-
-// Configuración de CORS CORREGIDA
+// CORS configurado para Railway
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' 
-    ? [
-        'https://*.railway.app',
-        'http://localhost:5173',
-        'https://tu-frontend.railway.app' // Reemplaza con tu URL real
-      ] 
-    : 'http://localhost:5173',
+  origin: process.env.FRONTEND_URL || "http://localhost:5173",
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Middleware para preflight requests - FORMA CORRECTA
-app.options('*', (req, res) => {
-  const origin = req.headers.origin;
-  res.setHeader('Access-Control-Allow-Origin', origin || '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Content-Length, X-Requested-With');
-  res.setHeader('Access-Control-Allow-Credentials', 'true');
-  res.sendStatus(200);
+// Logging middleware para debug
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  next();
 });
 
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Rutas de la API
+app.use("/consentimientos", consentimientosRoutes);
+app.use("/consentimientos-firmados", consentimientosFirmadosRoutes);
+app.use("/generar-pdf", generarPdfRoutes);
+app.use("/profesionales", profesionalesRoutes);
+app.use("/access-integration", accessIntegrationRoutes);
 
-// HEALTH CHECK MEJORADO (pero simple)
+// Healthcheck mejorado para Railway
 app.get("/health", async (req, res) => {
   try {
-    // Verificación rápida de la BD (pero no bloqueante)
-    const client = await pool.connect().catch(err => {
-      console.log('⚠️ BD no disponible, pero servidor funciona');
-      return null;
-    });
+    // Verificar conexión a la base de datos
+    const db = await import('./db.js');
+    const client = await db.default.connect();
     
-    if (client) {
-      await client.query('SELECT 1');
-      client.release();
-    }
+    // Verificar que podemos hacer una consulta simple
+    await client.query('SELECT 1 as health_check');
+    client.release();
     
-    res.status(200).json({ 
-      status: "OK", 
-      message: "Servidor funcionando",
-      database: client ? "Conectada" : "No disponible",
+    res.status(200).json({
+      status: "OK",
+      message: "Servidor y base de datos funcionando correctamente",
       timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || 'development'
+      environment: process.env.NODE_ENV || "development"
     });
   } catch (error) {
-    // Si hay error, igual responder 200 pero con info del error
-    res.status(200).json({ 
-      status: "WARNING", 
-      message: "Servidor funcionando pero BD con problemas",
+    console.error('Healthcheck failed:', error);
+    res.status(503).json({
+      status: "ERROR",
+      message: "Error de conexión a la base de datos",
       error: error.message,
       timestamp: new Date().toISOString()
     });
@@ -89,90 +68,70 @@ app.get("/health", async (req, res) => {
 
 // Ruta raíz
 app.get("/", (req, res) => {
-  res.json({ 
-    message: "Backend de Consentimientos Informados",
+  res.json({
+    message: "API de Consentimientos Médicos - Backend",
     version: "1.0.0",
-    status: "Activo",
-    endpoints: [
-      "/health - Estado del servidor",
-      "/consentimientos - Gestión de consentimientos",
-      "/consentimientos-firmados - Consentimientos firmados",
-      "/profesionales - Gestión de profesionales"
-    ]
+    environment: process.env.NODE_ENV || "development",
+    endpoints: {
+      health: "/health",
+      consentimientos: "/consentimientos",
+      consentimientos_firmados: "/consentimientos-firmados",
+      profesionales: "/profesionales",
+      access_integration: "/access-integration",
+      generar_pdf: "/generar-pdf"
+    }
   });
 });
 
-// Rutas API (IMPORTANTE: mantener este orden)
-app.use("/access-integration", accessIntegrationRoutes);
-app.use("/consentimientos", consentimientosRoutes);
-app.use("/consentimientos-firmados", consentimientosFirmadosRoutes);
-app.use("/generar-pdf", generarPdfRoutes);
-app.use("/profesionales", profesionalesRoutes);
-
-// Ruta de prueba
-app.get("/test", (req, res) => {
-  res.json({ message: "Ruta de prueba funcionando correctamente" });
+// Ruta de prueba de la base de datos
+app.get("/test-db", async (req, res) => {
+  try {
+    const db = await import('./db.js');
+    const result = await db.default.query('SELECT NOW() as current_time, version() as db_version');
+    
+    res.json({
+      database: "Conectado correctamente",
+      current_time: result.rows[0].current_time,
+      db_version: result.rows[0].db_version
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: "Error de conexión a la base de datos",
+      details: error.message
+    });
+  }
 });
 
-// Manejo de rutas no encontradas
+// Manejo de errores 404
 app.use((req, res) => {
   res.status(404).json({ 
     error: "Ruta no encontrada",
     path: req.path,
-    method: req.method 
+    method: req.method
   });
 });
 
-// Manejo de errores global
+// Manejo global de errores
 app.use((err, req, res, next) => {
-  console.error("Error global:", err.message);
-  
-  // Evitar el error de path-to-regexp específico
-  if (err.message.includes('path-to-regexp')) {
-    return res.status(400).json({ 
-      error: "Error en la configuración de rutas",
-      details: "Contacte al administrador del sistema"
-    });
-  }
-  
+  console.error("Error global:", err);
   res.status(500).json({ 
     error: "Error interno del servidor",
-    ...(process.env.NODE_ENV === 'development' && { details: err.message })
+    ...(process.env.NODE_ENV === 'development' && { 
+      details: err.message,
+      stack: err.stack 
+    })
   });
 });
 
 const PORT = process.env.PORT || 4000;
+const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
 
-// Función de inicio mejorada
-const startServer = () => {
-  return new Promise((resolve, reject) => {
-    const server = app.listen(PORT, '0.0.0.0', (err) => {
-      if (err) {
-        reject(err);
-        return;
-      }
-      console.log(`✅ Servidor ejecutándose en puerto ${PORT}`);
-      console.log(`🌍 Ambiente: ${process.env.NODE_ENV || 'development'}`);
-      console.log(`🔗 Health check: http://localhost:${PORT}/health`);
-      console.log(`🔗 Ruta principal: http://localhost:${PORT}/`);
-      resolve(server);
-    });
-  });
-};
-
-// Iniciar servidor con manejo de errores
-startServer().catch(error => {
-  console.error('❌ Error al iniciar servidor:', error);
-  process.exit(1);
+// Iniciar servidor
+app.listen(PORT, HOST, () => {
+  console.log('🚀 Servidor iniciado correctamente');
+  console.log(`📍 URL: http://${HOST}:${PORT}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`📊 Puerto: ${PORT}`);
 });
 
-// Manejo de señales para graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('🛑 Recibida señal SIGTERM, apagando gracefulmente...');
-  process.exit(0);
-});
-
-process.on('SIGINT', () => {
-  console.log('🛑 Recibida señal SIGINT, apagando gracefulmente...');
-  process.exit(0);
-});
+export default app;
