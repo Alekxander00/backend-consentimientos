@@ -3,11 +3,11 @@ import cors from "cors";
 import dotenv from "dotenv";
 
 // Importar rutas
-import consentimientosRoutes from "./routes/consentimiento.js";
-import consentimientosFirmadosRoutes from "./routes/consentimientosFirmados.js";
-import generarPdfRoutes from "./routes/generar-pdf.js";
-import profesionalesRoutes from "./routes/profesionales.js";
-import accessIntegrationRoutes from "./routes/access-integration.js";
+// import consentimientosRoutes from "./routes/consentimiento.js";
+// import consentimientosFirmadosRoutes from "./routes/consentimientosFirmados.js";
+// import generarPdfRoutes from "./routes/generar-pdf.js";
+// import profesionalesRoutes from "./routes/profesionales.js";
+// import accessIntegrationRoutes from "./routes/access-integration.js";
 
 dotenv.config();
 
