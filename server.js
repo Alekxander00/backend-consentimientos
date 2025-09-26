@@ -7,11 +7,33 @@ import consentimientosRoutes from "./routes/consentimiento.js";
 import consentimientosFirmadosRoutes from "./routes/consentimientosFirmados.js";
 import generarPdfRoutes from "./routes/generar-pdf.js";
 import profesionalesRoutes from "./routes/profesionales.js";
-import accessIntegrationRoutes from "./routes/acces-integration.js";
+import accessIntegrationRoutes from "./routes/access-integration.js";
 
 dotenv.config();
 
 const app = express();
+// Al inicio del archivo, después de los imports
+const loadRoute = async (routePath, routeName) => {
+  try {
+    const module = await import(routePath);
+    console.log(`✅ ${routeName} cargado correctamente`);
+    return module.default;
+  } catch (error) {
+    console.error(`❌ Error cargando ${routeName}:`, error.message);
+    // Retornar un router vacío para evitar crash
+    const express = await import('express');
+    const router = express.default.Router();
+    router.get('/test', (req, res) => res.json({ message: `${routeName} - Ruta temporal` }));
+    return router;
+  }
+};
+
+// Cargar rutas dinámicamente
+const consentimientosRoutes = await loadRoute('./routes/consentimiento.js', 'Consentimientos');
+const consentimientosFirmadosRoutes = await loadRoute('./routes/consentimientosFirmados.js', 'Consentimientos Firmados');
+const generarPdfRoutes = await loadRoute('./routes/generar-pdf.js', 'Generar PDF');
+const profesionalesRoutes = await loadRoute('./routes/profesionales.js', 'Profesionales');
+const accessIntegrationRoutes = await loadRoute('./routes/access-integration.js', 'Access Integration');
 
 // Middlewares básicos
 app.use(express.json({ limit: '10mb' }));
