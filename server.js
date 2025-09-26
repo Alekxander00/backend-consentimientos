@@ -2,11 +2,13 @@
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
+import healthRoutes from "./health.js";
 
 dotenv.config();
 const app = express();
 
 app.use(express.json({ limit: "10mb" }));
+app.use("/health", healthRoutes);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cors({
   origin: process.env.FRONTEND_URL || "*",
