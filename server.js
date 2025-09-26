@@ -6,7 +6,15 @@ import healthRoutes from "./health.js";
 
 dotenv.config();
 const app = express();
+// 🔑 Configurar CORS
+app.use(cors({
+  origin: "*" // en dev lo dejamos abierto, en prod puedes restringir
+}));
 
+// Resto de tus rutas...
+app.get("/health", (req, res) => {
+  res.json({ ok: true });
+});
 app.use(express.json({ limit: "10mb" }));
 app.use("/health", healthRoutes);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
