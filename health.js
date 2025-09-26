@@ -2,6 +2,8 @@ import express from "express";
 
 const router = express.Router();
 
+app.get("/health", (req, res) => res.send("OK"));
+
 // Healthcheck rápido (Railway)
 router.get("/", (req, res) => {
   res.status(200).send("OK");
