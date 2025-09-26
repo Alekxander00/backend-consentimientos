@@ -6,7 +6,7 @@ const router = express.Router();
 
 // Healthcheck rápido (Railway)
 router.get("/", (req, res) => {
-  res.status(200).send("OK");
+  res.status(200).json({ status: "OK" });
 });
 
 // Healthcheck extendido (opcional)
