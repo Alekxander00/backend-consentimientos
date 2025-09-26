@@ -16,9 +16,7 @@ app.use(cors({
 }));
 
 // health simple y rápido (Railway exige 200)
-app.get("/health", (req, res) => {
-  return res.status(200).json({ status: "OK", ts: new Date().toISOString() });
-});
+app.get("/health", (req, res) => res.send("OK"));
 
 // health-db para probar la DB manualmente
 app.get("/health-db", async (req, res) => {
