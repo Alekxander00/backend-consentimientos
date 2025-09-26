@@ -1,140 +1,66 @@
+// server.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 
-// Importar rutas
-// import consentimientosRoutes from "./routes/consentimiento.js";
-// import consentimientosFirmadosRoutes from "./routes/consentimientosFirmados.js";
-// import generarPdfRoutes from "./routes/generar-pdf.js";
-// import profesionalesRoutes from "./routes/profesionales.js";
-// import accessIntegrationRoutes from "./routes/access-integration.js";
-
 dotenv.config();
-
 const app = express();
-// Al inicio del archivo, después de los imports
-const loadRoute = async (routePath, routeName) => {
-  try {
-    const module = await import(routePath);
-    console.log(`✅ ${routeName} cargado correctamente`);
-    return module.default;
-  } catch (error) {
-    console.error(`❌ Error cargando ${routeName}:`, error.message);
-    // Retornar un router vacío para evitar crash
-    const express = await import('express');
-    const router = express.default.Router();
-    router.get('/test', (req, res) => res.json({ message: `${routeName} - Ruta temporal` }));
-    return router;
-  }
-};
 
-// Cargar rutas dinámicamente
-const consentimientosRoutes = await loadRoute('./routes/consentimiento.js', 'Consentimientos');
-const consentimientosFirmadosRoutes = await loadRoute('./routes/consentimientosFirmados.js', 'Consentimientos Firmados');
-const generarPdfRoutes = await loadRoute('./routes/generar-pdf.js', 'Generar PDF');
-const profesionalesRoutes = await loadRoute('./routes/profesionales.js', 'Profesionales');
-const accessIntegrationRoutes = await loadRoute('./routes/access-integration.js', 'Access Integration');
-
-// Middlewares básicos
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-
-// CORS configurado para Railway
+app.use(express.json({ limit: "10mb" }));
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(cors({
-  origin: process.env.FRONTEND_URL || "http://localhost:5173",
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization']
+  origin: process.env.FRONTEND_URL || "*",
+  credentials: true
 }));
 
-// Logging middleware para debug
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
-  next();
-});
-
-// Rutas de la API
-app.use("/consentimientos", consentimientosRoutes);
-app.use("/consentimientos-firmados", consentimientosFirmadosRoutes);
-app.use("/generar-pdf", generarPdfRoutes);
-app.use("/profesionales", profesionalesRoutes);
-app.use("/access-integration", accessIntegrationRoutes);
-
-// Healthcheck mejorado para Railway
+// health simple y rápido (Railway exige 200)
 app.get("/health", (req, res) => {
-  res.status(200).json({
-    status: "OK",
-    message: "Servidor funcionando",
-    timestamp: new Date().toISOString(),
-  });
+  return res.status(200).json({ status: "OK", ts: new Date().toISOString() });
 });
 
-// Ruta raíz
-app.get("/", (req, res) => {
-  res.json({
-    message: "API de Consentimientos Médicos - Backend",
-    version: "1.0.0",
-    environment: process.env.NODE_ENV || "development",
-    endpoints: {
-      health: "/health",
-      consentimientos: "/consentimientos",
-      consentimientos_firmados: "/consentimientos-firmados",
-      profesionales: "/profesionales",
-      access_integration: "/access-integration",
-      generar_pdf: "/generar-pdf"
-    }
-  });
-});
-
-// Ruta de prueba de la base de datos
-app.get("/test-db", async (req, res) => {
+// health-db para probar la DB manualmente
+app.get("/health-db", async (req, res) => {
   try {
-    const db = await import('./db.js');
-    const result = await db.default.query('SELECT NOW() as current_time, version() as db_version');
-    
-    res.json({
-      database: "Conectado correctamente",
-      current_time: result.rows[0].current_time,
-      db_version: result.rows[0].db_version
-    });
-  } catch (error) {
-    res.status(500).json({
-      error: "Error de conexión a la base de datos",
-      details: error.message
-    });
+    const db = await import("./db.js");
+    await db.default.query("SELECT 1");
+    return res.status(200).json({ db: "OK" });
+  } catch (err) {
+    return res.status(500).json({ db: "ERROR", error: err.message });
   }
 });
 
-// Manejo de errores 404
-app.use((req, res) => {
-  res.status(404).json({ 
-    error: "Ruta no encontrada",
-    path: req.path,
-    method: req.method
-  });
-});
+async function start() {
+  try {
+    // Intentamos cargar rutas — si fallan, logueamos pero no detenemos el servidor
+    try {
+      const consentimientos = (await import("./routes/consentimiento.js")).default;
+      const consentimientosFirmados = (await import("./routes/consentimientosFirmados.js")).default;
+      const generarPdf = (await import("./routes/generar-pdf.js")).default;
+      const profesionales = (await import("./routes/profesionales.js")).default;
+      const accessIntegration = (await import("./routes/access-integration.js")).default;
 
-// Manejo global de errores
-app.use((err, req, res, next) => {
-  console.error("Error global:", err);
-  res.status(500).json({ 
-    error: "Error interno del servidor",
-    ...(process.env.NODE_ENV === 'development' && { 
-      details: err.message,
-      stack: err.stack 
-    })
-  });
-});
+      app.use("/consentimientos", consentimientos);
+      app.use("/consentimientos-firmados", consentimientosFirmados);
+      app.use("/generar-pdf", generarPdf);
+      app.use("/profesionales", profesionales);
+      app.use("/access-integration", accessIntegration);
+      console.log("✅ Rutas cargadas");
+    } catch (err) {
+      console.error("⚠️ Error cargando rutas (no crítico):", err && err.message ? err.message : err);
+    }
 
-const PORT = process.env.PORT || 4000;
-const HOST = process.env.NODE_ENV === 'production' ? '0.0.0.0' : 'localhost';
+    const PORT = process.env.PORT || 4000;
+    const HOST = "0.0.0.0";
+    app.listen(PORT, HOST, () => {
+      console.log(`🚀 Servidor iniciado en http://${HOST}:${PORT}`);
+    });
 
-// Iniciar servidor
-app.listen(PORT, HOST, () => {
-  console.log('🚀 Servidor iniciado correctamente');
-  console.log(`📍 URL: http://${HOST}:${PORT}`);
-  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📊 Puerto: ${PORT}`);
-});
+  } catch (err) {
+    console.error("Error arrancando servidor:", err);
+    process.exit(1);
+  }
+}
+
+start();
 
 export default app;
