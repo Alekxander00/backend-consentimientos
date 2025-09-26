@@ -52,6 +52,15 @@ async function start() {
       app.use("/generar-pdf", generarPdf);
       app.use("/profesionales", profesionales);
       app.use("/access-integration", accessIntegration);
+      app.get('/api/pacientes-access', async (req, res) => {
+        try {
+          const result = await pool.query('SELECT * FROM pacientes_access ORDER BY paciente_nombre');
+          res.json(result.rows);
+        } catch (error) {
+          console.error('Error al obtener pacientes:', error);
+          res.status(500).json({ error: 'Error interno del servidor' });
+        }
+      });
       console.log("✅ Rutas cargadas");
     } catch (err) {
       console.error("⚠️ Error cargando rutas (no crítico):", err && err.message ? err.message : err);
