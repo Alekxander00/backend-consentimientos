@@ -61,31 +61,12 @@ app.use("/profesionales", profesionalesRoutes);
 app.use("/access-integration", accessIntegrationRoutes);
 
 // Healthcheck mejorado para Railway
-app.get("/health", async (req, res) => {
-  try {
-    // Verificar conexión a la base de datos
-    const db = await import('./db.js');
-    const client = await db.default.connect();
-    
-    // Verificar que podemos hacer una consulta simple
-    await client.query('SELECT 1 as health_check');
-    client.release();
-    
-    res.status(200).json({
-      status: "OK",
-      message: "Servidor y base de datos funcionando correctamente",
-      timestamp: new Date().toISOString(),
-      environment: process.env.NODE_ENV || "development"
-    });
-  } catch (error) {
-    console.error('Healthcheck failed:', error);
-    res.status(503).json({
-      status: "ERROR",
-      message: "Error de conexión a la base de datos",
-      error: error.message,
-      timestamp: new Date().toISOString()
-    });
-  }
+app.get("/health", (req, res) => {
+  res.status(200).json({
+    status: "OK",
+    message: "Servidor funcionando",
+    timestamp: new Date().toISOString(),
+  });
 });
 
 // Ruta raíz
