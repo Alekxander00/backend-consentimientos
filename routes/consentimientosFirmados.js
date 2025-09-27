@@ -25,38 +25,63 @@ router.post("/", upload.single('paciente_firma'), async (req, res) => {
       aceptacion,
       declaracion,
       observaciones,
-      profesional_id
+      profesional_id,
+      id_access // ✅ Nuevo campo para actualizar estado
     } = req.body;
 
     if (!req.file) {
       return res.status(400).json({ error: "No se proporcionó firma" });
     }
 
-    // Usar el buffer directamente del archivo subido
-    // La variable correcta es req.file.buffer, no firmaBuffer
     const firmaData = req.file.buffer;
 
-    const result = await pool.query(
-      `INSERT INTO consentimientos_firmados 
-       (idconsto, paciente_nombre, paciente_identificacion, paciente_telefono, paciente_direccion, paciente_firma,
-        aceptacion, declaracion, observaciones, profesional_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-       RETURNING *`,
-      [
-        idconsto, 
-        paciente_nombre, 
-        paciente_identificacion, 
-        paciente_telefono || null, 
-        paciente_direccion || null, 
-        firmaData, // Usar el buffer directamente
-        aceptacion, 
-        declaracion, 
-        observaciones || null,
-        profesional_id || null
-      ]
-    );
+    // Iniciar transacción
+    const client = await pool.connect();
+    
+    try {
+      await client.query('BEGIN');
 
-    res.json(result.rows[0]);
+      // 1. Insertar consentimiento firmado
+      const result = await client.query(
+        `INSERT INTO consentimientos_firmados 
+         (idconsto, paciente_nombre, paciente_identificacion, paciente_telefono, paciente_direccion, paciente_firma,
+          aceptacion, declaracion, observaciones, profesional_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+         RETURNING *`,
+        [
+          idconsto, 
+          paciente_nombre, 
+          paciente_identificacion, 
+          paciente_telefono || null, 
+          paciente_direccion || null, 
+          firmaData,
+          aceptacion, 
+          declaracion, 
+          observaciones || null,
+          profesional_id || null
+        ]
+      );
+
+      // 2. ✅ Actualizar estado de firma en pacientes_access
+      if (id_access) {
+        await client.query(
+          `UPDATE pacientes_access 
+           SET firmado = TRUE, fecha_firma = NOW() 
+           WHERE id_access = $1`,
+          [id_access]
+        );
+      }
+
+      await client.query('COMMIT');
+      
+      res.json(result.rows[0]);
+      
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
     
   } catch (err) {
     console.error("Error al registrar consentimiento firmado:", err);

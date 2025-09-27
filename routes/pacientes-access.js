@@ -8,8 +8,20 @@ const router = express.Router();
 router.get("/", async (req, res) => {
   try {
     console.log("📥 Solicitud recibida para /pacientes-access");
-    const result = await pool.query('SELECT * FROM pacientes_access ORDER BY paciente_nombre');
-    console.log(`✅ Se encontraron ${result.rows.length} pacientes`);
+    
+    const result = await pool.query(`
+      SELECT 
+        pa.*, 
+        c.nombre as nombre_consentimiento,
+        e.nombre as nombre_especialidad
+      FROM pacientes_access pa
+      LEFT JOIN consentimientos c ON pa.consentimiento_id = c.idconsto
+      LEFT JOIN especialidades e ON c.especialidad = e.id
+      WHERE pa.firmado = FALSE OR pa.firmado IS NULL
+      ORDER BY pa.paciente_nombre
+    `);
+    
+    console.log(`✅ Se encontraron ${result.rows.length} pacientes no firmados`);
     res.json(result.rows);
   } catch (error) {
     console.error('❌ Error al obtener pacientes:', error);
@@ -23,10 +35,20 @@ router.get("/:id", async (req, res) => {
     const { id } = req.params;
     console.log(`📥 Buscando paciente con ID: ${id}`);
     
-    const result = await pool.query(
-      'SELECT * FROM pacientes_access WHERE id_access = $1', 
-      [id]
-    );
+    const result = await pool.query(`
+      SELECT 
+        pa.*, 
+        c.*,
+        c.nombre as nombre_consentimiento,
+        e.nombre as nombre_especialidad,
+        p.nombre as profesional_nombre,
+        p.especialidad as profesional_especialidad
+      FROM pacientes_access pa
+      LEFT JOIN consentimientos c ON pa.consentimiento_id = c.idconsto
+      LEFT JOIN especialidades e ON c.especialidad = e.id
+      LEFT JOIN profesionales p ON pa.id_profesional = p.id
+      WHERE pa.id_access = $1
+    `, [id]);
     
     if (result.rows.length === 0) {
       return res.status(404).json({ error: "Paciente no encontrado" });
@@ -39,5 +61,4 @@ router.get("/:id", async (req, res) => {
     res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
-
 export default router;
