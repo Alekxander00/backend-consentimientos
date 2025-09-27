@@ -1,3 +1,4 @@
+// db.js
 import pkg from "pg";
 const { Pool } = pkg;
 import dotenv from "dotenv";
@@ -7,45 +8,34 @@ const isRemote = Boolean(process.env.DATABASE_URL);
 
 const config = isRemote ? {
   connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-  // 🔧 CONFIGURACIONES CLAVE PARA EVITAR BLOQUEOS
-  max: 20, // Máximo de conexiones
-  idleTimeoutMillis: 30000, // Cerrar conexiones inactivas
-  connectionTimeoutMillis: 5000,
-  maxUses: 7500, // Rotación de conexiones
+  ssl: { rejectUnauthorized: false }
 } : {
   user: process.env.DB_USER,
   host: process.env.DB_HOST,
   database: process.env.DB_NAME,
   password: process.env.DB_PASSWORD,
   port: process.env.DB_PORT ? Number(process.env.DB_PORT) : undefined,
-  ssl: false,
-  // Mismas configuraciones para desarrollo
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 5000,
-  maxUses: 7500,
+  ssl: false
 };
 
 const pool = new Pool(config);
 
-// Manejo mejorado de errores
-pool.on('error', (err) => {
-  console.error('Database pool error:', err);
+pool.on("error", (err) => {
+  console.error("Unexpected idle client error:", err);
 });
 
-// Función para consultas con manejo seguro
-export const query = async (text, params) => {
-  const start = Date.now();
+// función opcional para debug (no es llamada automáticamente)
+export async function testConnectionNonBlocking() {
   try {
-    const res = await pool.query(text, params);
-    const duration = Date.now() - start;
-    console.log('Query executed in', duration, 'ms');
-    return res;
+    const client = await pool.connect();
+    const tables = await client.query(`
+      SELECT table_name FROM information_schema.tables WHERE table_schema = 'public'
+    `);
+    console.log("Tablas:", tables.rows.map(r => r.table_name));
+    client.release();
   } catch (err) {
-    console.error('Query error:', err);
-    throw err;
+    console.error("No se pudo conectar a DB (no crítico):", err && err.message ? err.message : err);
   }
-};
+}
 
 export default pool;
