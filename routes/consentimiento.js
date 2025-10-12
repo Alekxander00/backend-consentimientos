@@ -17,14 +17,17 @@ router.get("/", async (req, res) => {
 // Obtener un consentimiento por ID
 router.get("/", async (req, res) => {
   try {
-    const result = await pool.query("SELECT * FROM consentimientos ORDER BY idconsto DESC");
+    const hospitalId = req.hospitalId;
+    const result = await pool.query(
+      "SELECT * FROM consentimientos WHERE hospital_id = $1 ORDER BY idconsto DESC",
+      [hospitalId]
+    );
     res.json(result.rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: "Error al obtener consentimientos" });
   }
 });
-
 // Insertar un consentimiento
 router.post("/", async (req, res) => {
   try {
