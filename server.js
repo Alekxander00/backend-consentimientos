@@ -45,11 +45,12 @@ app.get("/health-db", async (req, res) => {
 
 // server.js - AGREGAR ESTAS MODIFICACIONES
 
+// server.js - AGREGAR ESTO en la sección de rutas
 async function start() {
   try {
-    // Intentamos cargar rutas — si fallan, logueamos pero no detenemos el servidor
+    // Intentamos cargar rutas
     try {
-        // ✅ AGREGAR ESTA IMPORTACIÓN
+        // ✅ AGREGAR ESTAS IMPORTACIONES
         const auth = (await import("./routes/auth.js")).default;
         
         const consentimientos = (await import("./routes/consentimiento.js")).default;
@@ -60,9 +61,8 @@ async function start() {
         const pacientesAccess = (await import("./routes/pacientes-access.js")).default;
         const accessUpdate = (await import("./routes/access-update.js")).default;
 
-        // ✅ REGISTRAR RUTA DE AUTH PRIMERO
+        // ✅ REGISTRAR RUTAS (auth PRIMERO)
         app.use("/auth", auth);
-        
         app.use("/consentimientos", consentimientos);
         app.use("/consentimientos-firmados", consentimientosFirmados);
         app.use("/generar-pdf", generarPdf);
@@ -71,9 +71,9 @@ async function start() {
         app.use("/pacientes-access", pacientesAccess);
         app.use("/access-update", accessUpdate);
         
-        console.log("✅ Rutas cargadas incluyendo autenticación");
+        console.log("✅ Todas las rutas cargadas correctamente");
       } catch (err) {
-        console.error("⚠️ Error cargando rutas (no crítico):", err && err.message ? err.message : err);
+        console.error("⚠️ Error cargando rutas:", err && err.message ? err.message : err);
       }
 
     const PORT = process.env.PORT || 4000;
@@ -82,7 +82,6 @@ async function start() {
     app.listen(PORT, HOST, () => {
       console.log(`🚀 Servidor en http://${HOST}:${PORT}`);
       console.log(`🔐 Ruta de autenticación: http://${HOST}:${PORT}/auth/login`);
-      console.log(`📊 Ruta de pacientes: http://${HOST}:${PORT}/pacientes-access`);
     });
 
   } catch (err) {
