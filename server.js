@@ -30,37 +30,48 @@ app.get("/health-db", async (req, res) => {
   }
 });
 
-// ✅ Nueva ruta para pacientes access - DEFINIDA FUERA DEL BLOQUE ASYNC
-app.get('/api/pacientes-access', async (req, res) => {
-  try {
-    console.log("📥 Solicitud recibida para /api/pacientes-access");
-    const result = await pool.query('SELECT * FROM pacientes_access ORDER BY paciente_nombre');
-    console.log(`✅ Se encontraron ${result.rows.length} pacientes`);
-    res.json(result.rows);
-  } catch (error) {
-    console.error('❌ Error al obtener pacientes:', error);
-    res.status(500).json({ error: 'Error interno del servidor: ' + error.message });
-  }
-});
+// // ✅ Nueva ruta para pacientes access - DEFINIDA FUERA DEL BLOQUE ASYNC
+// app.get('/api/pacientes-access', async (req, res) => {
+//   try {
+//     console.log("📥 Solicitud recibida para /api/pacientes-access");
+//     const result = await pool.query('SELECT * FROM pacientes_access ORDER BY paciente_nombre');
+//     console.log(`✅ Se encontraron ${result.rows.length} pacientes`);
+//     res.json(result.rows);
+//   } catch (error) {
+//     console.error('❌ Error al obtener pacientes:', error);
+//     res.status(500).json({ error: 'Error interno del servidor: ' + error.message });
+//   }
+// });
+
+// server.js - AGREGAR ESTAS MODIFICACIONES
 
 async function start() {
   try {
     // Intentamos cargar rutas — si fallan, logueamos pero no detenemos el servidor
     try {
+        // ✅ AGREGAR ESTA IMPORTACIÓN
+        const auth = (await import("./routes/auth.js")).default;
+        
         const consentimientos = (await import("./routes/consentimiento.js")).default;
         const consentimientosFirmados = (await import("./routes/consentimientosFirmados.js")).default;
         const generarPdf = (await import("./routes/generar-pdf.js")).default;
         const profesionales = (await import("./routes/profesionales.js")).default;
         const accessIntegration = (await import("./routes/access-integration.js")).default;
-        const pacientesAccess = (await import("./routes/pacientes-access.js")).default; // ✅ Nueva ruta
+        const pacientesAccess = (await import("./routes/pacientes-access.js")).default;
+        const accessUpdate = (await import("./routes/access-update.js")).default;
 
+        // ✅ REGISTRAR RUTA DE AUTH PRIMERO
+        app.use("/auth", auth);
+        
         app.use("/consentimientos", consentimientos);
         app.use("/consentimientos-firmados", consentimientosFirmados);
         app.use("/generar-pdf", generarPdf);
         app.use("/profesionales", profesionales);
         app.use("/access-integration", accessIntegration);
-        app.use("/pacientes-access", pacientesAccess); // ✅ Usar nueva ruta
-        console.log("✅ Rutas cargadas");
+        app.use("/pacientes-access", pacientesAccess);
+        app.use("/access-update", accessUpdate);
+        
+        console.log("✅ Rutas cargadas incluyendo autenticación");
       } catch (err) {
         console.error("⚠️ Error cargando rutas (no crítico):", err && err.message ? err.message : err);
       }
@@ -70,7 +81,8 @@ async function start() {
 
     app.listen(PORT, HOST, () => {
       console.log(`🚀 Servidor en http://${HOST}:${PORT}`);
-      console.log(`📊 Ruta de pacientes: http://${HOST}:${PORT}/api/pacientes-access`);
+      console.log(`🔐 Ruta de autenticación: http://${HOST}:${PORT}/auth/login`);
+      console.log(`📊 Ruta de pacientes: http://${HOST}:${PORT}/pacientes-access`);
     });
 
   } catch (err) {
