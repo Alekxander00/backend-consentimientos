@@ -1,6 +1,6 @@
 import express from "express";
 import pool from "../db.js";
-import { autenticarToken } from "../routes/auth.js";
+import { autenticarToken } from "./auth.js";
 import { filtrarPorHospital } from "../middleware/hospital.js";
 
 const router = express.Router();
@@ -14,6 +14,8 @@ router.get("/", async (req, res) => {
   try {
     const hospitalId = req.hospitalId;
     
+    console.log("🔍 Buscando pacientes para hospital:", hospitalId);
+    
     const result = await pool.query(
       `SELECT pa.*, c.nombre as nombre_consentimiento, e.nombre as nombre_especialidad
        FROM pacientes_access pa
@@ -24,10 +26,11 @@ router.get("/", async (req, res) => {
       [hospitalId]
     );
     
+    console.log(`✅ Encontrados ${result.rows.length} pacientes para hospital ${hospitalId}`);
     res.json(result.rows);
   } catch (error) {
-    console.error('Error al obtener pacientes:', error);
-    res.status(500).json({ error: 'Error interno del servidor' });
+    console.error('❌ Error al obtener pacientes:', error);
+    res.status(500).json({ error: 'Error interno del servidor: ' + error.message });
   }
 });
 
