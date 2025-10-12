@@ -14,12 +14,14 @@
   "license": "ISC",
   "description": "Backend para sistema de consentimientos médicos",
   "dependencies": {
+    "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
     "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
     "helmet": "^7.1.0",
     "html2canvas": "^1.4.1",
+    "jsonwebtoken": "^9.0.2",
     "jspdf": "^2.5.1",
     "multer": "^1.4.5-lts.1",
     "pg": "^8.11.3"
