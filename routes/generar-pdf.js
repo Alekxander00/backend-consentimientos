@@ -1,355 +1,231 @@
 import express from "express";
 import pool from "../db.js";
 import { jsPDF } from "jspdf";
+import fs from "fs/promises";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const router = express.Router();
 
-// Mapeo de tipos de consentimiento a plantillas
+// Para obtener __dirname en ES modules
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+// Mapeo completo de tipos de consentimiento a archivos de plantilla
 const PLANTILLAS = {
-  "RETIRO DE SUTURA": "retiro_sutura",
-  "ECOGRAFÍA OCULAR": "ecografia_ocular", 
-  "CAMPO VISUAL": "campo_visual",
-  "FOTOGRAFÍA OCULAR": "fotografia_ocular",
-  "PRUEBAS DE PROVOCACIÓN CONJUNTIVAL": "provocacion_conjuntival",
-  "PAQUIMETRÍA": "paquimetria"
+  "RETIRO DE SUTURA": "retiro_sutura.md",
+  "ECOGRAFÍA OCULAR": "ecografia_ocular.md", 
+  "CAMPO VISUAL": "campo_visual.md",
+  "FOTOGRAFÍA OCULAR": "fotografia_ocular.md",
+  "PRUEBAS DE PROVOCACIÓN CONJUNTIVAL": "provocacion_conjuntival.md",
+  "PAQUIMETRÍA": "paquimetria.md",
+  "ABLACION DE LESION O TEJIDO DE CONJUNTIVA": "ablacion_conjuntiva.md",
+  "ABLACION DE LESION CORIORETINAL": "ablacion_corioretinal.md",
+  "CAPSULOTOMIA LASER": "capsulotomia_laser.md",
+  "LISIS DE SINEQUIA": "lisis_sinequia.md",
+  "CAMPO VISUAL COMPUTARIZADO": "campo_visual.md",
+  "FOTOGRAFIA OCULAR DE SEGMENTO POSTERIOR": "fotografia_ocular.md",
+  "PRUEBAS DE PROVOCACION CONJUNTIVAL CON ALERGENOS": "provocacion_conjuntival.md",
+  "BIOMETRIA": "biometria.md",
+  "ANGIOGRAFIA FLUORESCEINICA": "angiografia.md",
+  "DILATACION PUPILAR": "dilatacion_pupilar.md",
+  "IRIDOTOMIA LASER": "iridotomia_laser.md",
+  "TRABECULOPLASTIA LASER": "trabeculoplastia.md",
+  "TOMOGRAFIA DE ESTRUCTURA OCULAR": "tomografia.md",
+  "PTOSIS PALPEBRAL": "ptosis_palpebral.md",
+  "RECONSTRUCCIÓN DE PÁRPADO": "reconstruccion_parpado.md",
+  "RECUBRIMIENTO CONJUNTIVAL": "recubrimiento_conjuntival.md",
+  "EXTRACCIÓN DE LENTE INTRAOCULAR": "extraccion_lente.md",
+  "SUTURA EN PIEL": "sutura_piel.md",
+  "RETIRO DE CUERPO EXTRAÑO EN CORNEA": "retiro_cuerpo_extrano.md",
+  "SUTURA EN CORNEA": "sutura_cornea.md"
 };
 
-// Función para detectar el tipo de consentimiento basado en el nombre
+// Función para detectar el tipo de consentimiento
 const detectarTipoConsentimiento = (nombre) => {
-  const nombreUpper = nombre.toUpperCase();
-  for (const [key, value] of Object.entries(PLANTILLAS)) {
-    if (nombreUpper.includes(key)) {
-      return value;
+  if (!nombre) return "default";
+  
+  const nombreUpper = nombre.toUpperCase().trim();
+  
+  // Buscar coincidencia exacta primero
+  for (const [key] of Object.entries(PLANTILLAS)) {
+    if (nombreUpper === key) {
+      return key;
     }
   }
+  
+  // Buscar coincidencia parcial
+  for (const [key] of Object.entries(PLANTILLAS)) {
+    if (nombreUpper.includes(key)) {
+      return key;
+    }
+  }
+  
   return "default";
 };
 
-// Función para generar PDF de retiro de sutura
-const generarRetiroSutura = (pdf, consentimiento, y) => {
-  pdf.setFontSize(16);
-  pdf.text("CONSENTIMIENTO INFORMADO PARA RETIRO DE SUTURA", 105, y, { align: "center" });
-  y += 10;
+// Función para cargar plantillas desde archivos
+const cargarPlantilla = async (nombrePlantilla) => {
+  try {
+    const templatePath = path.join(__dirname, '..', 'plantillas', nombrePlantilla);
+    const contenido = await fs.readFile(templatePath, 'utf-8');
+    console.log(`✅ Plantilla cargada: ${nombrePlantilla}`);
+    return contenido;
+  } catch (error) {
+    console.error(`❌ Error cargando plantilla ${nombrePlantilla}:`, error.message);
+    // Intentar cargar plantilla por defecto
+    try {
+      const defaultPath = path.join(__dirname, '..', 'plantillas', 'default.md');
+      const defaultContent = await fs.readFile(defaultPath, 'utf-8');
+      console.log('✅ Usando plantilla por defecto');
+      return defaultContent;
+    } catch (defaultError) {
+      console.error('❌ Error cargando plantilla por defecto:', defaultError.message);
+      return null;
+    }
+  }
+};
+
+// Función para reemplazar variables en la plantilla
+const procesarPlantilla = (plantilla, datos) => {
+  if (!plantilla) return "Plantilla no disponible";
   
-  pdf.setFontSize(10);
-  pdf.text("CÓDIGO:", 20, y);
-  pdf.text("VERSIÓN:", 100, y);
-  pdf.text("FECHA: ENERO – 20 – 2021", 150, y);
-  y += 8;
+  const variables = {
+    '{{PACIENTE_NOMBRE}}': datos.paciente_nombre || '________________',
+    '{{PACIENTE_IDENTIFICACION}}': datos.paciente_identificacion || '________________',
+    '{{PACIENTE_TELEFONO}}': datos.paciente_telefono || '________________',
+    '{{PACIENTE_DIRECCION}}': datos.paciente_direccion || '________________',
+    '{{PROFESIONAL_NOMBRE}}': datos.profesional_nombre || '________________',
+    '{{PROFESIONAL_IDENTIFICACION}}': datos.profesional_identificacion || '________________',
+    '{{PROFESIONAL_ESPECIALIDAD}}': datos.profesional_especialidad || '________________',
+    '{{REGISTRO_PROFESIONAL}}': datos.registro_profesional || '________________',
+    '{{FECHA_ACTUAL}}': new Date().toLocaleDateString('es-ES'),
+    '{{ID_CONSENTIMIENTO}}': datos.idconsto || '________________',
+    '{{NOMBRE_CONSENTIMIENTO}}': datos.nombre || '________________',
+    '{{INF_GRAL}}': datos.inf_gral || '',
+    '{{ENQUE_CONSISTE}}': datos.enque_consiste || '',
+    '{{BENEFICIOS}}': datos.beneficios || '',
+    '{{RIESGOS}}': datos.riesgos || ''
+  };
+
+  let contenidoProcesado = plantilla;
+  for (const [variable, valor] of Object.entries(variables)) {
+    contenidoProcesado = contenidoProcesado.split(variable).join(valor);
+  }
+
+  return contenidoProcesado;
+};
+
+// Función para generar PDF desde plantilla procesada
+const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
+  let y = 20;
+  const lineas = contenido.split('\n');
   
-  pdf.setFont(undefined, 'bold');
-  pdf.text("PROCESO PROCEDIMIENTO MENOR", 105, y, { align: "center" });
-  y += 15;
+  pdf.setFont("helvetica");
   
-  // Datos del paciente
-  pdf.setFont(undefined, 'normal');
-  pdf.text(`${consentimiento.paciente_nombre} de años de edad,`, 20, y);
-  y += 6;
-  pdf.text("(Nombre del paciente)", 20, y);
-  y += 6;
-  pdf.text(`Identificado con: RC__TI___CC: __ No.: ${consentimiento.paciente_identificacion}`, 20, y);
-  y += 15;
-  
-  // DECLARO sección
-  pdf.setFont(undefined, 'bold');
-  pdf.text("DECLARO", 20, y);
-  y += 8;
-  
-  pdf.setFont(undefined, 'normal');
-  pdf.text(`Que el DOCTOR (A) ${consentimiento.profesional_nombre},`, 20, y);
-  y += 6;
-  pdf.text("me ha explicado que es conveniente proceder, en mi situación, al tratamiento mediante RETIRO DE SUTURA.", 20, y);
-  y += 15;
-  
-  // CONSIDERACIONES GENERALES
-  pdf.setFont(undefined, 'bold');
-  pdf.text("CONSIDERACIONES GENERALES", 20, y);
-  y += 8;
-  
-  const consideraciones = [
-    "El sentido de la visión es responsable del 85% del total de las percepciones sensoriales y por ello debemos",
-    "ejecutar ante un traumatismo, un adecuado diagnóstico y tratamiento con la derivación rápida y convincente al",
-    "oftalmólogo en aras de preservar uno de los dones más apreciados del ser humano."
-  ];
-  
-  consideraciones.forEach(line => {
-    pdf.text(line, 20, y);
-    y += 6;
-  });
-  y += 10;
-  
-  // ETIOLOGÍA
-  pdf.setFont(undefined, 'bold');
-  pdf.text("ETIOLOGÍA", 20, y);
-  y += 8;
-  
-  const etiologia = [
-    "El globo ocular puede sufrir diversas formas de trauma, mencionaremos y desarrollaremos los principales:",
-    "1.- Contusiónales",
-    "2.- Heridas penetrantes", 
-    "3.- Quemaduras químicas",
-    "4.- Penetración de cuerpos extraños",
-    "5.- Fracturas orbitarias",
-    "6.- Traumas por onda explosiva",
-    "7.- Traumas físicos",
-    "",
-    "Los puntos de la queratoplastia penetrante, se pueden quitar por varios motivos. Principalmente, porque se",
-    "aflojen, dejando de cumplir su función y facilitando la infección o vascularización de la zona. También se quitan,",
-    "después de un periodo de tiempo que no debe ser inferior a los 6 ó 9 meses para corregir el astigmatismo.",
-    "",
-    "Se retiran los puntos más tensos y de manera paulatina. Los puntos se retiran con anestesia tópica: gotas, en la",
-    "lámpara de hendidura, o en quirófano, depende del número que se vayan a retirar y la colaboración del paciente."
-  ];
-  
-  etiologia.forEach(line => {
+  for (let i = 0; i < lineas.length; i++) {
+    const linea = lineas[i].trim();
+    
+    // Manejar saltos de página
     if (y > 270) {
       pdf.addPage();
       y = 20;
     }
-    pdf.text(line, 20, y);
-    y += 6;
-  });
-  y += 10;
+    
+    // Saltar líneas vacías
+    if (linea === '') {
+      y += 4;
+      continue;
+    }
+    
+    // Título principal (líneas que empiezan con #)
+    if (linea.startsWith('# ')) {
+      pdf.setFontSize(16);
+      const titulo = linea.substring(2).trim();
+      pdf.text(titulo, 105, y, { align: "center" });
+      y += 10;
+    }
+    // Subtítulo (líneas que empiezan con ##)
+    else if (linea.startsWith('## ')) {
+      pdf.setFontSize(12);
+      pdf.setFont(undefined, 'bold');
+      const subtitulo = linea.substring(3).trim();
+      pdf.text(subtitulo, 20, y);
+      pdf.setFont(undefined, 'normal');
+      y += 8;
+    }
+    // Texto en negrita (entre **)
+    else if (linea.startsWith('**') && linea.endsWith('**')) {
+      pdf.setFontSize(10);
+      pdf.setFont(undefined, 'bold');
+      const texto = linea.substring(2, linea.length - 2).trim();
+      const splitText = pdf.splitTextToSize(texto, 170);
+      pdf.text(splitText, 20, y);
+      pdf.setFont(undefined, 'normal');
+      y += splitText.length * 5 + 2;
+    }
+    // Listas con viñetas
+    else if (linea.startsWith('- ') || linea.startsWith('• ') || linea.startsWith('✓ ')) {
+      pdf.setFontSize(10);
+      const splitText = pdf.splitTextToSize(linea, 160);
+      pdf.text(splitText, 25, y);
+      y += splitText.length * 5 + 2;
+    }
+    // Texto normal
+    else {
+      pdf.setFontSize(10);
+      const splitText = pdf.splitTextToSize(linea, 170);
+      pdf.text(splitText, 20, y);
+      y += splitText.length * 5 + 2;
+    }
+  }
   
-  // Segunda página
-  pdf.addPage();
-  y = 20;
+  return y;
+};
+
+// Función para agregar firmas
+const agregarFirmas = (pdf, consentimiento, y) => {
+  if (y > 200) {
+    pdf.addPage();
+    y = 20;
+  }
   
-  pdf.text("CONSENTIMIENTO INFORMADO PARA RETIRO DE SUTURA", 105, y, { align: "center" });
-  y += 10;
+  const fecha = new Date();
+  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+                'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   
-  pdf.setFontSize(10);
-  pdf.text("CÓDIGO:", 20, y);
-  pdf.text("VERSIÓN:", 100, y);
-  pdf.text("FECHA: ENERO – 20 – 2021", 150, y);
-  y += 8;
-  
-  pdf.setFont(undefined, 'bold');
-  pdf.text("PROCESO PROCEDIMIENTO MENOR", 105, y, { align: "center" });
-  y += 15;
-  
-  // Continuación del texto
-  const continuacion = [
-    "Si la sutura es continua se suele retirar en quirófano. No suele ser muy molesto, y requiere tratamiento",
-    "posterior con UNGUENTOS. Se cortan con una aguja de insulina, y se retiran con pinzas.",
-    "",
-    "DECLARO: Que he comprendido la información recibida en un lenguaje claro y sencillo y he podido formular",
-    "todas las preguntas que he considerado oportunas Que el procedimiento descrito es una de las indicaciones",
-    "establecidas en Oftalmología para la solución de mi problema no existiendo contraindicación para su realización,",
-    "siendo consciente de que no existen garantías absolutas de que el resultado de la cirugía sea el más satisfactorio,",
-    "existiendo la posibilidad de fracaso. Que, en cualquier momento y sin necesidad de dar ninguna explicación,",
-    "puedo revocar este consentimiento. Por ello manifiesto que estoy satisfecho con la información recibida y que",
-    "comprendo el alcance y los riesgos del tratamiento.",
-    "",
-    "AUTORIZO: que la realización del procedimiento sea filmada o fotografiada con fines didácticos o científicos, no",
-    "identificando en ningún caso el nombre del paciente o de sus familiares. A que los tejidos o muestras obtenidos",
-    "en mi intervención o los datos sobre mi enfermedad podrán ser utilizados en comunicaciones científicas o",
-    "proyectos de investigación o docentes. Y en tales condiciones.",
-    "",
-    "CONSIENTO QUE SE ME REALICE EL RETIRO DE SUTURA así como las maniobras u operaciones que sean",
-    "necesarias durante la intervención quirúrgica.",
-    "",
-    "CONSIENTO",
-    "",
-    `Que se me realice RETIRO DE SUTURA DEL OJO _____ así como las maniobras u operaciones`,
-    "que sean necesarias durante la intervención quirúrgica."
-  ];
-  
-  continuacion.forEach(line => {
-    pdf.text(line, 20, y);
-    y += 6;
-  });
-  y += 15;
-  
-  // Firmas
-  const fecha = new Date().toLocaleDateString();
-  pdf.text(`En _____, a _____ de _____, de ${new Date().getFullYear()}`, 20, y);
+  pdf.text(`En _____, a _____ de ${meses[fecha.getMonth()]}, de ${fecha.getFullYear()}`, 20, y);
   y += 15;
   
   // Líneas para firmas
-  pdf.line(20, y, 60, y);
-  pdf.line(80, y, 120, y);
-  pdf.line(140, y, 180, y);
+  pdf.line(20, y, 70, y);
+  pdf.line(90, y, 140, y);
+  pdf.line(160, y, 190, y);
   y += 5;
   
-  pdf.text("firma Médico(a)", 25, y);
-  pdf.text("firma El/la Paciente", 85, y);
-  pdf.text("firma Representante legal", 145, y);
+  pdf.setFontSize(9);
+  pdf.text("Médico Tratante", 25, y);
+  pdf.text("Paciente", 95, y);
+  pdf.text("Representante Legal", 165, y);
   y += 8;
   
-  pdf.text(`RM: ${consentimiento.registro_profesional || ''}`, 25, y);
-  pdf.text(`CC: ${consentimiento.paciente_identificacion}`, 85, y);
-  pdf.text("CC", 145, y);
-  
-  return y;
-};
-
-// Función para generar PDF de ecografía ocular
-const generarEcografiaOcular = (pdf, consentimiento, y) => {
-  pdf.setFontSize(14);
-  pdf.text("CONSENTIMIENTO INFORMADO PARA ECOGRAFÍA OCULAR", 105, y, { align: "center" });
-  y += 10;
-  
-  pdf.setFontSize(10);
-  pdf.text("CÓDIGO:", 20, y);
-  pdf.text("VERSIÓN:", 100, y);
-  pdf.text("FECHA: ENERO – 20 – 2021", 150, y);
-  y += 8;
-  
-  pdf.setFont(undefined, 'bold');
-  pdf.text("PROCESO EXAMENES DIAGNOSTICOS", 105, y, { align: "center" });
-  y += 15;
-  
-  // Datos del paciente
-  pdf.setFont(undefined, 'normal');
-  pdf.text(`NOMBRE DEL PACIENTE: ${consentimiento.paciente_nombre} de ____ años de edad,`, 20, y);
-  y += 6;
-  pdf.text(`Identificado con: TI__ CC __ No.: ${consentimiento.paciente_identificacion}`, 20, y);
-  y += 10;
-  
-  // DECLARO sección
-  pdf.setFont(undefined, 'bold');
-  pdf.text("DECLARO", 20, y);
-  y += 8;
-  
-  pdf.setFont(undefined, 'normal');
-  pdf.text(`Que el DOCTOR/A ${consentimiento.profesional_nombre}, me ha explicado que`, 20, y);
-  y += 6;
-  pdf.text("es conveniente proceder, en mi situación, al tratamiento mediante ECOGRAFIA OCULAR.", 20, y);
-  y += 10;
-  
-  // Contenido específico de ecografía ocular
-  const contenido = [
-    "Con la ecografía ocular se pueden diagnosticar muchas de lesiones del globo ocular y los órganos que lo rodean. La",
-    "exploración es indolora para el paciente, absolutamente inocua y, además, ofrece la ventaja de obtener imágenes en tiempo",
-    "real.",
-    "",
-    "¿Qué es una ecografía ocular?",
-    "",
-    "Es una técnica de diagnóstico por imagen que estudia las estructuras del globo ocular y las estructuras anexas a la órbita",
-    "(músculos, glándula lagrimal, grasa orbitaria, etc.) mediante ultrasonidos.",
-    "",
-    "¿Cómo se realiza una ecografía ocular?",
-    "",
-    "Al igual que las ecografías abdominales o de otras partes del cuerpo, para realizar una ecografía ocular se extiende un gel",
-    "sobre la piel del paciente (en este caso el párpado, aunque se puede realizar directamente sobre el globo ocular) y se pone",
-    "en contacto la sonda del ecógrafo con dicho gel para obtener las imágenes."
-  ];
-  
-  contenido.forEach(line => {
-    if (y > 270) {
-      pdf.addPage();
-      y = 20;
-    }
-    pdf.text(line, 20, y);
-    y += 6;
-  });
-  
-  // Agregar más contenido según sea necesario...
-  
-  return y;
-};
-
-// Función para generar PDF genérico (fallback)
-const generarPDFGenerico = (pdf, consentimiento, y) => {
-  pdf.setFontSize(16);
-  pdf.text("CONSENTIMIENTO INFORMADO", 105, y, { align: "center" });
-  y += 10;
-
-  pdf.setFontSize(14);
-  pdf.text(consentimiento.nombre, 105, y, { align: "center" });
-  y += 15;
-
-  // Información general
-  if (consentimiento.inf_gral) {
-    pdf.setFontSize(12);
-    pdf.setFont(undefined, 'bold');
-    pdf.text("INFORMACIÓN GENERAL:", 20, y);
-    y += 8;
-    pdf.setFont(undefined, 'normal');
-    const splitText = pdf.splitTextToSize(consentimiento.inf_gral, 170);
-    pdf.text(splitText, 20, y);
-    y += splitText.length * 6 + 10;
-  }
-
-  // Datos del paciente
-  pdf.setFont(undefined, 'bold');
-  pdf.text("DATOS DEL PACIENTE:", 20, y);
-  y += 8;
-  pdf.setFont(undefined, 'normal');
-  pdf.text(`Nombre: ${consentimiento.paciente_nombre}`, 20, y);
-  y += 6;
-  pdf.text(`Identificación: ${consentimiento.paciente_identificacion}`, 20, y);
+  pdf.text(`Dr. ${consentimiento.profesional_nombre || ''}`, 25, y);
+  pdf.text(consentimiento.paciente_nombre || '', 95, y);
+  pdf.text("", 165, y);
   y += 6;
   
-  if (consentimiento.paciente_telefono) {
-    pdf.text(`Teléfono: ${consentimiento.paciente_telefono}`, 20, y);
-    y += 6;
-  }
+  pdf.text(`Registro: ${consentimiento.registro_profesional || ''}`, 25, y);
+  pdf.text(`CC: ${consentimiento.paciente_identificacion || ''}`, 95, y);
+  pdf.text("CC:", 165, y);
   
-  if (consentimiento.paciente_direccion) {
-    pdf.text(`Dirección: ${consentimiento.paciente_direccion}`, 20, y);
-    y += 6;
-  }
-
-  // Datos del profesional
-  if (consentimiento.profesional_nombre) {
-    y += 10;
-    pdf.setFont(undefined, 'bold');
-    pdf.text("DATOS DEL PROFESIONAL:", 20, y);
-    y += 8;
-    pdf.setFont(undefined, 'normal');
-    pdf.text(`Nombre: ${consentimiento.profesional_nombre}`, 20, y);
-    y += 6;
-    pdf.text(`Identificación: ${consentimiento.profesional_identificacion}`, 20, y);
-    y += 6;
-    pdf.text(`Especialidad: ${consentimiento.profesional_especialidad}`, 20, y);
-    y += 6;
-    
-    if (consentimiento.registro_profesional) {
-      pdf.text(`Registro Profesional: ${consentimiento.registro_profesional}`, 20, y);
-      y += 6;
-    }
-  }
-
-  // Firma
-  if (consentimiento.paciente_firma_base64) {
-    y += 10;
-    pdf.setFont(undefined, 'bold');
-    pdf.text("FIRMA DEL PACIENTE:", 20, y);
-    y += 8;
-    
-    pdf.addImage(`data:image/png;base64,${consentimiento.paciente_firma_base64}`, 'PNG', 20, y, 80, 40);
-    y += 45;
-  }
-
-  // Declaraciones
-  y += 10;
-  pdf.setFont(undefined, 'bold');
-  pdf.text("DECLARACIONES:", 20, y);
-  y += 8;
-  pdf.setFont(undefined, 'normal');
-  
-  if (consentimiento.aceptacion) {
-    pdf.text(`Aceptación: ${consentimiento.aceptacion}`, 20, y);
-    y += 6;
-  }
-  
-  if (consentimiento.declaracion) {
-    pdf.text(`Declaración: ${consentimiento.declaracion}`, 20, y);
-    y += 6;
-  }
-
-  // Fecha
-  pdf.text(`Fecha: ${new Date(consentimiento.fecha_registro).toLocaleDateString()}`, 20, y + 10);
-
-  return y;
+  return y + 15;
 };
 
 // Ruta principal para generar PDF
 router.get("/:id", async (req, res) => {
   try {
     const { id } = req.params;
+    console.log(`📄 Solicitando PDF para consentimiento firmado ID: ${id}`);
 
     // Obtener datos del consentimiento firmado
     const result = await pool.query(`
@@ -360,9 +236,6 @@ router.get("/:id", async (req, res) => {
         p.identificacion as profesional_identificacion,
         p.especialidad as profesional_especialidad,
         p.registro_profesional,
-        p.correo as profesional_correo,
-        p.telefono as profesional_telefono,
-        p.direccion as profesional_direccion,
         encode(cf.paciente_firma, 'base64') as paciente_firma_base64
       FROM consentimientos_firmados cf
       LEFT JOIN consentimientos c ON cf.idconsto = c.idconsto
@@ -371,43 +244,63 @@ router.get("/:id", async (req, res) => {
     `, [id]);
 
     if (result.rows.length === 0) {
+      console.log('❌ Consentimiento no encontrado');
       return res.status(404).json({ error: "Consentimiento firmado no encontrado" });
     }
 
     const consentimiento = result.rows[0];
+    console.log(`🔍 Tipo de consentimiento: ${consentimiento.nombre}`);
+
+    // Detectar tipo de consentimiento
+    const tipoConsentimiento = detectarTipoConsentimiento(consentimiento.nombre);
+    const nombrePlantilla = PLANTILLAS[tipoConsentimiento] || 'default.md';
+    
+    console.log(`📋 Usando plantilla: ${nombrePlantilla} para: ${tipoConsentimiento}`);
+
+    // Cargar plantilla
+    const plantilla = await cargarPlantilla(nombrePlantilla);
+    
+    if (!plantilla) {
+      console.log('❌ No se pudo cargar ninguna plantilla');
+      return res.status(500).json({ error: "Error al cargar la plantilla del consentimiento" });
+    }
+
+    // Procesar plantilla con datos
+    const contenido = procesarPlantilla(plantilla, consentimiento);
 
     // Crear PDF
     const pdf = new jsPDF();
+    let y = generarPDFDesdePlantilla(pdf, contenido, consentimiento);
     
-    // Configuración inicial
-    pdf.setFont("helvetica");
-    let y = 20;
-
-    // Detectar tipo de consentimiento y generar PDF correspondiente
-    const tipoConsentimiento = detectarTipoConsentimiento(consentimiento.nombre);
+    // Agregar firmas
+    agregarFirmas(pdf, consentimiento, y);
     
-    switch (tipoConsentimiento) {
-      case "retiro_sutura":
-        y = generarRetiroSutura(pdf, consentimiento, y);
-        break;
-      case "ecografia_ocular":
-        y = generarEcografiaOcular(pdf, consentimiento, y);
-        break;
-      // Agregar más casos para otros tipos de consentimiento...
-      default:
-        y = generarPDFGenerico(pdf, consentimiento, y);
+    // Agregar firma escaneada si existe
+    if (consentimiento.paciente_firma_base64) {
+      pdf.addPage();
+      pdf.setFontSize(12);
+      pdf.setFont(undefined, 'bold');
+      pdf.text("FIRMA DEL PACIENTE:", 20, 30);
+      try {
+        pdf.addImage(`data:image/png;base64,${consentimiento.paciente_firma_base64}`, 'PNG', 20, 40, 80, 40);
+      } catch (imageError) {
+        console.log('⚠️ Error al agregar imagen de firma:', imageError.message);
+        pdf.text("(Firma no disponible)", 20, 45);
+      }
     }
 
-    // Generar el PDF y enviarlo como respuesta
+    // Generar el PDF
     const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
     
     res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=consentimiento-${consentimiento.paciente_identificacion}.pdf`);
+    res.setHeader('Content-Disposition', `attachment; filename=consentimiento-${consentimiento.paciente_identificacion || 'sin_identificacion'}.pdf`);
     res.send(pdfBuffer);
 
+    console.log(`✅ PDF generado exitosamente para: ${consentimiento.paciente_nombre}`);
+
   } catch (error) {
-    console.error("Error al generar PDF:", error);
-    res.status(500).json({ error: "Error al generar el PDF" });
+    console.error("❌ Error al generar PDF:", error);
+    res.status(500).json({ error: "Error interno al generar el PDF: " + error.message });
   }
 });
 
