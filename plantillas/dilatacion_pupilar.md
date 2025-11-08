@@ -12,7 +12,7 @@ Identificado con: RC__TI__ CC __ No.: {{PACIENTE_IDENTIFICACION}}
 
 **DECLARO**
 
-Que el DOCTOR/A {{PROFESIONAL_NOMBRE}}, me ha explicado que es conveniente proceder, en mi situación, al tratamiento mediante DILATACION PUPILAR.
+Que el {{PROFESIONAL_NOMBRE}}, me ha explicado que es conveniente proceder, en mi situación, al tratamiento mediante DILATACION PUPILAR.
 
 **1. INFORMACIÓN GENERAL**
 
@@ -53,3 +53,16 @@ Tropicamida + Fenilefrina    Tropicamida    Otro: _____
 **CONSIENTO**
 
 Que se me realice DILATACION PUPILAR DEL OJO _____, así como las maniobras u operaciones que sean necesarias durante el examen diagnóstico.
+
+Firma del acompañante
+
+**DATOS DE IDENTIFICACIÓN**
+
+Médico: {{PROFESIONAL_NOMBRE}}
+Registro: {{REGISTRO_PROFESIONAL}}
+
+Paciente: {{PACIENTE_NOMBRE}}
+Identificación: {{PACIENTE_IDENTIFICACION}}
+
+Acompañante: _____
+Identificación: _____
