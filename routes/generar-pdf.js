@@ -4,6 +4,26 @@ import { jsPDF } from "jspdf";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import fetch from 'node-fetch';
+
+// Función para descargar y convertir el logo a base64
+const obtenerLogoBase64 = async () => {
+  try {
+    const logoUrl = "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRhBCSDxk3yzp9ndJpq1YTQKpn3mZiS1MtwdSyB1mi1IyRARG8SC4aSfYRH3AG-NIq7C9o";
+    const response = await fetch(logoUrl);
+    
+    if (!response.ok) {
+      throw new Error(`Error al descargar logo: ${response.status}`);
+    }
+    
+    const buffer = await response.buffer();
+    const base64 = buffer.toString('base64');
+    return base64;
+  } catch (error) {
+    console.error('❌ Error al obtener el logo:', error.message);
+    return null;
+  }
+};
 
 const router = express.Router();
 
@@ -120,12 +140,23 @@ const procesarPlantilla = (plantilla, datos) => {
 };
 
 // Función mejorada para generar PDF desde plantilla procesada
-const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
+// Función mejorada para generar PDF desde plantilla procesada
+const generarPDFDesdePlantilla = (pdf, contenido, consentimiento, logoBase64) => {
   let y = 20;
   const lineas = contenido.split('\n');
   const pageHeight = pdf.internal.pageSize.height;
+  const pageWidth = pdf.internal.pageSize.width;
   
   pdf.setFont("helvetica");
+
+  // Agregar logo en la parte superior derecha
+  if (logoBase64) {
+    try {
+      pdf.addImage(logoBase64, 'JPEG', pageWidth - 40, 10, 30, 30);
+    } catch (imageError) {
+      console.log('⚠️ Error al cargar logo:', imageError.message);
+    }
+  }
   
   for (let i = 0; i < lineas.length; i++) {
     let linea = lineas[i].trim();
@@ -134,6 +165,15 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
     if (y > pageHeight - 40) {
       pdf.addPage();
       y = 20;
+      
+      // Agregar logo en páginas siguientes también
+      if (logoBase64) {
+        try {
+          pdf.addImage(logoBase64, 'JPEG', pageWidth - 40, 10, 30, 30);
+        } catch (imageError) {
+          console.log('⚠️ Error al cargar logo en página nueva:', imageError.message);
+        }
+      }
     }
     
     // Saltar líneas vacías
@@ -149,6 +189,7 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
         try {
           const imgData = `data:image/png;base64,${consentimiento.paciente_firma_base64}`;
           pdf.addImage(imgData, 'PNG', 20, y, 70, 30);
+          pdf.setFontSize(9);
           pdf.text("Firma del paciente", 25, y + 35);
           y += 45;
         } catch (imageError) {
@@ -170,6 +211,7 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
     if (linea.includes('___FIRMA_MEDICO___')) {
       // Línea para firma del médico
       pdf.line(20, y, 100, y);
+      pdf.setFontSize(9);
       pdf.text(`Firma del Dr. ${consentimiento.profesional_nombre || ''}`, 25, y + 8);
       y += 20;
       continue;
@@ -178,17 +220,21 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
     // Procesar marcadores de firma del acompañante
     if (linea.includes('___FIRMA_ACOMPANANTE___')) {
       pdf.line(20, y, 100, y);
+      pdf.setFontSize(9);
       pdf.text("Firma del acompañante", 25, y + 8);
       y += 20;
       continue;
     }
     
+    // Resto del código para procesar texto normal, títulos, etc.
     // Título principal (líneas que empiezan con #)
     if (linea.startsWith('# ')) {
       pdf.setFontSize(16);
+      pdf.setFont(undefined, 'bold');
       const titulo = linea.substring(2).trim();
-      pdf.text(titulo, 105, y, { align: "center" });
-      y += 10;
+      pdf.text(titulo, pageWidth / 2, y, { align: "center" });
+      pdf.setFont(undefined, 'normal');
+      y += 12;
     }
     // Subtítulo (líneas que empiezan con ##)
     else if (linea.startsWith('## ')) {
@@ -200,10 +246,11 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
       y += 8;
     }
     // Texto en negrita (entre **)
-    else if (linea.startsWith('**') && linea.endsWith('**')) {
+    else if (linea.includes('**') && linea.includes('**')) {
       pdf.setFontSize(10);
       pdf.setFont(undefined, 'bold');
-      const texto = linea.substring(2, linea.length - 2).trim();
+      // Extraer texto entre **
+      const texto = linea.replace(/\*\*(.*?)\*\*/g, '$1').trim();
       const splitText = pdf.splitTextToSize(texto, 170);
       pdf.text(splitText, 20, y);
       pdf.setFont(undefined, 'normal');
@@ -310,29 +357,20 @@ router.get("/:id", async (req, res) => {
       return res.status(500).json({ error: "Error al cargar la plantilla del consentimiento" });
     }
 
+    // Obtener el logo
+    const logoBase64 = await obtenerLogoBase64();
+    if (logoBase64) {
+      console.log('✅ Logo cargado correctamente');
+    } else {
+      console.log('⚠️ No se pudo cargar el logo, continuando sin él');
+    }
+
     // Procesar plantilla con datos
     const contenido = procesarPlantilla(plantilla, consentimiento);
 
     // Crear PDF
     const pdf = new jsPDF();
-    let y = generarPDFDesdePlantilla(pdf, contenido, consentimiento);
-    
-    // Agregar firmas
-    // agregarFirmas(pdf, consentimiento, y);
-    
-    // Agregar firma escaneada si existe
-    if (consentimiento.paciente_firma_base64) {
-      pdf.addPage();
-      pdf.setFontSize(12);
-      pdf.setFont(undefined, 'bold');
-      pdf.text("FIRMA DEL PACIENTE:", 20, 30);
-      try {
-        pdf.addImage(`data:image/png;base64,${consentimiento.paciente_firma_base64}`, 'PNG', 20, 40, 80, 40);
-      } catch (imageError) {
-        console.log('⚠️ Error al agregar imagen de firma:', imageError.message);
-        pdf.text("(Firma no disponible)", 20, 45);
-      }
-    }
+    generarPDFDesdePlantilla(pdf, contenido, consentimiento, logoBase64);
 
     // Generar el PDF
     const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
