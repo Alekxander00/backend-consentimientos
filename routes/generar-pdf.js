@@ -229,42 +229,42 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
 };
 
 // Función para agregar firmas
-const agregarFirmas = (pdf, consentimiento, y) => {
-  if (y > 200) {
-    pdf.addPage();
-    y = 20;
-  }
+// const agregarFirmas = (pdf, consentimiento, y) => {
+//   if (y > 200) {
+//     pdf.addPage();
+//     y = 20;
+//   }
   
-  const fecha = new Date();
-  const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
-                'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
+//   const fecha = new Date();
+//   const meses = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 
+//                 'julio', 'agosto', 'septiembre', 'octubre', 'noviembre', 'diciembre'];
   
-  pdf.text(`En _____, a _____ de ${meses[fecha.getMonth()]}, de ${fecha.getFullYear()}`, 20, y);
-  y += 15;
+//   pdf.text(`En _____, a _____ de ${meses[fecha.getMonth()]}, de ${fecha.getFullYear()}`, 20, y);
+//   y += 15;
   
-  // Líneas para firmas
-  pdf.line(20, y, 70, y);
-  pdf.line(90, y, 140, y);
-  pdf.line(160, y, 190, y);
-  y += 5;
+//   // Líneas para firmas
+//   pdf.line(20, y, 70, y);
+//   pdf.line(90, y, 140, y);
+//   pdf.line(160, y, 190, y);
+//   y += 5;
   
-  pdf.setFontSize(9);
-  pdf.text("Médico Tratante", 25, y);
-  pdf.text("Paciente", 95, y);
-  pdf.text("Representante Legal", 165, y);
-  y += 8;
+//   pdf.setFontSize(9);
+//   pdf.text("Médico Tratante", 25, y);
+//   pdf.text("Paciente", 95, y);
+//   pdf.text("Representante Legal", 165, y);
+//   y += 8;
   
-  pdf.text(`Dr. ${consentimiento.profesional_nombre || ''}`, 25, y);
-  pdf.text(consentimiento.paciente_nombre || '', 95, y);
-  pdf.text("", 165, y);
-  y += 6;
+//   pdf.text(`Dr. ${consentimiento.profesional_nombre || ''}`, 25, y);
+//   pdf.text(consentimiento.paciente_nombre || '', 95, y);
+//   pdf.text("", 165, y);
+//   y += 6;
   
-  pdf.text(`Registro: ${consentimiento.registro_profesional || ''}`, 25, y);
-  pdf.text(`CC: ${consentimiento.paciente_identificacion || ''}`, 95, y);
-  pdf.text("CC:", 165, y);
+//   pdf.text(`Registro: ${consentimiento.registro_profesional || ''}`, 25, y);
+//   pdf.text(`CC: ${consentimiento.paciente_identificacion || ''}`, 95, y);
+//   pdf.text("CC:", 165, y);
   
-  return y + 15;
-};
+//   return y + 15;
+// };
 
 // Ruta principal para generar PDF
 router.get("/:id", async (req, res) => {

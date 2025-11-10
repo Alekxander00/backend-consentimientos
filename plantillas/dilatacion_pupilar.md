@@ -54,7 +54,17 @@ Tropicamida + Fenilefrina    Tropicamida    Otro: _____
 
 Que se me realice DILATACION PUPILAR DEL OJO _____, así como las maniobras u operaciones que sean necesarias durante el examen diagnóstico.
 
+_________________________
+{{FIRMA_PACIENTE}}
+Firma del paciente
+
+_________________________
+{{FIRMA_ACOMPANANTE}}
 Firma del acompañante
+
+_________________________
+{{FIRMA_MEDICO}}
+Firma del médico tratante
 
 **DATOS DE IDENTIFICACIÓN**
 
