@@ -318,7 +318,7 @@ router.get("/:id", async (req, res) => {
     let y = generarPDFDesdePlantilla(pdf, contenido, consentimiento);
     
     // Agregar firmas
-    agregarFirmas(pdf, consentimiento, y);
+    // agregarFirmas(pdf, consentimiento, y);
     
     // Agregar firma escaneada si existe
     if (consentimiento.paciente_firma_base64) {
