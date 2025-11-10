@@ -108,6 +108,7 @@ const procesarPlantilla = (plantilla, datos) => {
     '{{RIESGOS}}': datos.riesgos || '',
     '{{FIRMA_PACIENTE}}': '___FIRMA_PACIENTE___', // Marcador especial para firma
     '{{FIRMA_MEDICO}}': '___FIRMA_MEDICO___',     // Marcador especial para firma médico
+    '{{FIRMA_ACOMPANANTE}}': '___FIRMA_ACOMPANANTE___', // Marcador para acompañante
   };
 
   let contenidoProcesado = plantilla;
@@ -122,6 +123,7 @@ const procesarPlantilla = (plantilla, datos) => {
 const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
   let y = 20;
   const lineas = contenido.split('\n');
+  const pageHeight = pdf.internal.pageSize.height;
   
   pdf.setFont("helvetica");
   
@@ -129,7 +131,7 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
     let linea = lineas[i].trim();
     
     // Manejar saltos de página
-    if (y > 270) {
+    if (y > pageHeight - 40) {
       pdf.addPage();
       y = 20;
     }
@@ -140,18 +142,20 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
       continue;
     }
     
-    // Procesar marcadores de firma
+    // Procesar marcadores de firma del paciente
     if (linea.includes('___FIRMA_PACIENTE___')) {
       if (consentimiento.paciente_firma_base64) {
         // Agregar firma del paciente como imagen
         try {
           const imgData = `data:image/png;base64,${consentimiento.paciente_firma_base64}`;
-          pdf.addImage(imgData, 'PNG', 20, y, 80, 40);
+          pdf.addImage(imgData, 'PNG', 20, y, 70, 30);
+          pdf.text("Firma del paciente", 25, y + 35);
           y += 45;
         } catch (imageError) {
           console.log('⚠️ Error al cargar firma del paciente:', imageError.message);
-          pdf.text("(Firma del paciente)", 20, y);
-          y += 15;
+          pdf.line(20, y, 100, y);
+          pdf.text("Firma del paciente", 25, y + 8);
+          y += 20;
         }
       } else {
         // Línea para firma manual
@@ -162,10 +166,19 @@ const generarPDFDesdePlantilla = (pdf, contenido, consentimiento) => {
       continue;
     }
     
+    // Procesar marcadores de firma del médico
     if (linea.includes('___FIRMA_MEDICO___')) {
-      // Línea para firma del médico (siempre manual)
+      // Línea para firma del médico
       pdf.line(20, y, 100, y);
       pdf.text(`Firma del Dr. ${consentimiento.profesional_nombre || ''}`, 25, y + 8);
+      y += 20;
+      continue;
+    }
+    
+    // Procesar marcadores de firma del acompañante
+    if (linea.includes('___FIRMA_ACOMPANANTE___')) {
+      pdf.line(20, y, 100, y);
+      pdf.text("Firma del acompañante", 25, y + 8);
       y += 20;
       continue;
     }
@@ -308,18 +321,18 @@ router.get("/:id", async (req, res) => {
     agregarFirmas(pdf, consentimiento, y);
     
     // Agregar firma escaneada si existe
-    // if (consentimiento.paciente_firma_base64) {
-    //   pdf.addPage();
-    //   pdf.setFontSize(12);
-    //   pdf.setFont(undefined, 'bold');
-    //   pdf.text("FIRMA DEL PACIENTE:", 20, 30);
-    //   try {
-    //     pdf.addImage(`data:image/png;base64,${consentimiento.paciente_firma_base64}`, 'PNG', 20, 40, 80, 40);
-    //   } catch (imageError) {
-    //     console.log('⚠️ Error al agregar imagen de firma:', imageError.message);
-    //     pdf.text("(Firma no disponible)", 20, 45);
-    //   }
-    // }
+    if (consentimiento.paciente_firma_base64) {
+      pdf.addPage();
+      pdf.setFontSize(12);
+      pdf.setFont(undefined, 'bold');
+      pdf.text("FIRMA DEL PACIENTE:", 20, 30);
+      try {
+        pdf.addImage(`data:image/png;base64,${consentimiento.paciente_firma_base64}`, 'PNG', 20, 40, 80, 40);
+      } catch (imageError) {
+        console.log('⚠️ Error al agregar imagen de firma:', imageError.message);
+        pdf.text("(Firma no disponible)", 20, 45);
+      }
+    }
 
     // Generar el PDF
     const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
