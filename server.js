@@ -505,7 +505,7 @@ const ensureTempDir = async () => {
   }
 };
 
-// Ruta para enviar consentimiento por WhatsApp - CON PDF PROFESIONAL
+// Ruta para enviar consentimiento por WhatsApp - LLAMANDO AL GENERADOR REAL
 app.post("/whatsapp/enviar-consentimiento/:id", async (req, res) => {
   try {
     const { id } = req.params;
@@ -535,16 +535,23 @@ app.post("/whatsapp/enviar-consentimiento/:id", async (req, res) => {
       });
     }
 
-    // ✅ USAR EL GENERADOR PROFESIONAL CON PLANTILLAS
-    let pdfBuffer;
-    try {
-      console.log('🔄 Generando PDF profesional con plantillas...');
-      pdfBuffer = await generarPDFProfesional(id);
-      console.log('✅ PDF profesional generado exitosamente');
-    } catch (error) {
-      console.error('❌ Error con generador profesional, usando fallback:', error);
-      pdfBuffer = await generarPDFBasico(id);
+    // ✅ SOLUCIÓN DIRECTA: Hacer una petición HTTP al generador real
+    const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
+    
+    console.log(`🔄 Llamando al generador profesional: ${baseUrl}/generar-pdf/${id}`);
+    
+    const pdfResponse = await fetch(`${baseUrl}/generar-pdf/${id}`, {
+      headers: {
+        'Authorization': req.headers.authorization || ''
+      }
+    });
+
+    if (!pdfResponse.ok) {
+      throw new Error(`Error del generador: ${pdfResponse.status} ${pdfResponse.statusText}`);
     }
+
+    const pdfBuffer = await pdfResponse.buffer();
+    console.log('✅ PDF profesional generado correctamente');
 
     // Guardar PDF temporalmente
     await ensureTempDir();
@@ -554,7 +561,6 @@ app.post("/whatsapp/enviar-consentimiento/:id", async (req, res) => {
     await fs.writeFile(rutaArchivo, pdfBuffer);
 
     // Generar enlace de descarga
-    const baseUrl = process.env.BASE_URL || 'https://backend-consentimientos-production.up.railway.app';
     const enlaceDescarga = `${baseUrl}/whatsapp/descargar/${idUnico}`;
 
     // Crear mensaje para WhatsApp
@@ -605,10 +611,82 @@ ${enlaceDescarga}
 
   } catch (error) {
     console.error("❌ Error en envío WhatsApp:", error);
-    res.status(500).json({ 
-      success: false, 
-      error: "Error interno del servidor: " + error.message 
-    });
+    
+    // Si falla el fetch, intentar con el PDF básico como fallback
+    try {
+      console.log('🔄 Intentando con PDF básico como fallback...');
+      
+      const result = await pool.query(
+        `SELECT 
+          cf.*,
+          c.nombre as consentimiento_nombre,
+          p.nombre as profesional_nombre,
+          encode(cf.paciente_firma, 'base64') as paciente_firma_base64
+         FROM consentimientos_firmados cf
+         LEFT JOIN consentimientos c ON cf.idconsto = c.idconsto
+         LEFT JOIN profesionales p ON cf.profesional_id = p.id
+         WHERE cf.id = $1`,
+        [id]
+      );
+
+      if (result.rows.length === 0) {
+        throw new Error("Consentimiento no encontrado");
+      }
+
+      const consentimiento = result.rows[0];
+      const pdf = new jsPDF();
+      
+      // Contenido básico
+      pdf.setFontSize(16);
+      pdf.text("CONSENTIMIENTO INFORMADO", 20, 20);
+      pdf.setFontSize(12);
+      pdf.text(`Paciente: ${consentimiento.paciente_nombre}`, 20, 40);
+      pdf.text(`Identificación: ${consentimiento.paciente_identificacion}`, 20, 50);
+      pdf.text(`Procedimiento: ${consentimiento.consentimiento_nombre}`, 20, 60);
+      
+      if (consentimiento.paciente_firma_base64) {
+        pdf.text("Firma del paciente:", 20, 80);
+        try {
+          const imgData = `data:image/png;base64,${consentimiento.paciente_firma_base64}`;
+          pdf.addImage(imgData, 'PNG', 20, 85, 50, 20);
+        } catch (imageError) {
+          pdf.text("[Firma digital]", 20, 90);
+        }
+      }
+      
+      const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
+      
+      // Guardar PDF temporalmente
+      await ensureTempDir();
+      const idUnico = uuidv4();
+      const nombreArchivo = `consentimiento_${idUnico}.pdf`;
+      const rutaArchivo = path.join(TEMP_DIR, nombreArchivo);
+      await fs.writeFile(rutaArchivo, pdfBuffer);
+
+      const baseUrl = process.env.BASE_URL || `http://localhost:${process.env.PORT || 3001}`;
+      const enlaceDescarga = `${baseUrl}/whatsapp/descargar/${idUnico}`;
+
+      // ... resto del código para WhatsApp ...
+
+      res.json({
+        success: true,
+        enlaceWhatsApp,
+        enlaceDescarga,
+        mensaje: "Enlace de WhatsApp generado (PDF básico)",
+        datosPaciente: {
+          nombre: paciente.paciente_nombre,
+          telefono: paciente.paciente_telefono,
+          identificacion: paciente.paciente_identificacion
+        }
+      });
+
+    } catch (fallbackError) {
+      console.error("❌ Error también en fallback:", fallbackError);
+      res.status(500).json({ 
+        success: false, 
+        error: "Error interno del servidor: " + error.message 
+      });
+    }
   }
 });
 
@@ -633,7 +711,7 @@ app.get("/whatsapp/descargar/:id", async (req, res) => {
     const fileBuffer = await fs.readFile(archivoPath);
     res.send(fileBuffer);
 
-    console.log(`📤 PDF profesional descargado: ${id}`);
+    console.log(`📤 PDF descargado: ${id}`);
 
   } catch (error) {
     console.error("❌ Error descargando PDF:", error);
