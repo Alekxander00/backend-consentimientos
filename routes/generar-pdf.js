@@ -5,8 +5,6 @@ import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
 import fetch from 'node-fetch';
-import { v4 as uuidv4 } from 'uuid';
-import { enviarPDFPorWhatsApp, generarEnlaceWhatsApp } from '../whatsappService.js';
 
 // Función para descargar y convertir el logo a base64
 const obtenerLogoBase64 = async () => {
@@ -141,6 +139,7 @@ const procesarPlantilla = (plantilla, datos) => {
   return contenidoProcesado;
 };
 
+// Función mejorada para generar PDF desde plantilla procesada
 // Función mejorada para generar PDF desde plantilla procesada
 const generarPDFDesdePlantilla = (pdf, contenido, consentimiento, logoBase64) => {
   let y = 20;
@@ -387,143 +386,5 @@ router.get("/:id", async (req, res) => {
     res.status(500).json({ error: "Error interno al generar el PDF: " + error.message });
   }
 });
-
-const guardarPDFTemporal = async (pdfBuffer, nombreArchivo) => {
-  const tempDir = path.join(__dirname, '..', 'temp_pdfs');
-  
-  // Crear directorio si no existe
-  try {
-    await fs.access(tempDir);
-  } catch {
-    await fs.mkdir(tempDir, { recursive: true });
-  }
-
-  const idUnico = uuidv4();
-  const nombreArchivoUnico = `${idUnico}_${nombreArchivo}`;
-  const rutaCompleta = path.join(tempDir, nombreArchivoUnico);
-
-  await fs.writeFile(rutaCompleta, pdfBuffer);
-
-  // Devolver el id único para construir el enlace
-  return idUnico;
-};
-
-// Función para obtener el PDF temporal
-const obtenerPDFTemporal = async (idUnico) => {
-  const tempDir = path.join(__dirname, '..', 'temp_pdfs');
-  const archivos = await fs.readdir(tempDir);
-  
-  const archivo = archivos.find(a => a.startsWith(idUnico));
-  if (!archivo) {
-    return null;
-  }
-
-  const rutaCompleta = path.join(tempDir, archivo);
-  return await fs.readFile(rutaCompleta);
-};
-
-router.get("/descargar/:idUnico", async (req, res) => {
-  try {
-    const { idUnico } = req.params;
-    const pdfBuffer = await obtenerPDFTemporal(idUnico);
-
-    if (!pdfBuffer) {
-      return res.status(404).json({ error: "PDF no encontrado o expirado" });
-    }
-
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=consentimiento.pdf`);
-    res.send(pdfBuffer);
-  } catch (error) {
-    console.error("❌ Error al descargar PDF temporal:", error);
-    res.status(500).json({ error: "Error interno al descargar el PDF" });
-  }
-});
-
-router.post("/enviar-whatsapp/:id", async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { numeroWhatsApp } = req.body;
-
-    if (!numeroWhatsApp) {
-      return res.status(400).json({ error: "El número de WhatsApp es requerido" });
-    }
-
-    console.log(`📱 Solicitando envío de PDF por WhatsApp para consentimiento ID: ${id} a: ${numeroWhatsApp}`);
-
-    // Obtener datos del consentimiento firmado
-    const result = await pool.query(`
-      SELECT 
-        cf.*,
-        c.*,
-        p.nombre as profesional_nombre,
-        p.identificacion as profesional_identificacion,
-        p.especialidad as profesional_especialidad,
-        p.registro_profesional,
-        encode(cf.paciente_firma, 'base64') as paciente_firma_base64
-      FROM consentimientos_firmados cf
-      LEFT JOIN consentimientos c ON cf.idconsto = c.idconsto
-      LEFT JOIN profesionales p ON cf.profesional_id = p.id
-      WHERE cf.id = $1
-    `, [id]);
-
-    if (result.rows.length === 0) {
-      console.log('❌ Consentimiento no encontrado');
-      return res.status(404).json({ error: "Consentimiento firmado no encontrado" });
-    }
-
-    const consentimiento = result.rows[0];
-
-    // Detectar tipo de consentimiento y cargar plantilla
-    const tipoConsentimiento = detectarTipoConsentimiento(consentimiento.nombre);
-    const nombrePlantilla = PLANTILLAS[tipoConsentimiento] || 'default.md';
-    const plantilla = await cargarPlantilla(nombrePlantilla);
-
-    if (!plantilla) {
-      return res.status(500).json({ error: "Error al cargar la plantilla del consentimiento" });
-    }
-
-    // Obtener el logo
-    const logoBase64 = await obtenerLogoBase64();
-
-    // Procesar plantilla con datos
-    const contenido = procesarPlantilla(plantilla, consentimiento);
-
-    // Crear PDF
-    const pdf = new jsPDF();
-    generarPDFDesdePlantilla(pdf, contenido, consentimiento, logoBase64);
-
-    // Generar el PDF como Buffer
-    const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
-
-    // Preparar datos para WhatsApp
-    const datosPaciente = {
-      nombre: consentimiento.paciente_nombre,
-      procedimiento: consentimiento.nombre,
-      medico: consentimiento.profesional_nombre,
-      fecha: new Date().toLocaleDateString('es-ES')
-    };
-
-    // Enviar por WhatsApp
-    const resultadoWhatsApp = await enviarPDFPorWhatsApp(numeroWhatsApp, pdfBuffer, datosPaciente);
-
-    if (resultadoWhatsApp.success) {
-      res.json({ 
-        message: "PDF generado y enlace de WhatsApp listo",
-        enlaceWhatsApp: resultadoWhatsApp.enlaceWhatsApp,
-        enlaceDescarga: resultadoWhatsApp.enlaceDescarga,
-        mensaje: resultadoWhatsApp.mensaje
-      });
-    } else {
-      res.status(500).json({ error: "Error al preparar envío por WhatsApp: " + resultadoWhatsApp.error });
-    }
-
-  } catch (error) {
-    console.error("❌ Error al generar PDF o enviar por WhatsApp:", error);
-    res.status(500).json({ error: "Error interno: " + error.message });
-  }
-});
-
-
 
 export default router;
