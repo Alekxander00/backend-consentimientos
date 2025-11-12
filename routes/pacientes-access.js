@@ -14,6 +14,8 @@ router.get("/", async (req, res) => {
   try {
     const hospitalId = req.hospitalId;
     
+    console.log("🔍 Buscando pacientes para hospital:", hospitalId);
+    
     const result = await pool.query(
       `SELECT pa.*, c.nombre as nombre_consentimiento, e.nombre as nombre_especialidad
        FROM pacientes_access pa
@@ -24,6 +26,7 @@ router.get("/", async (req, res) => {
       [hospitalId]
     );
     
+    console.log(`✅ Encontrados ${result.rows.length} pacientes para hospital ${hospitalId}`);
     res.json(result.rows);
   } catch (error) {
     console.error('❌ Error al obtener pacientes:', error);
