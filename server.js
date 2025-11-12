@@ -396,35 +396,37 @@ const ensureTempDir = async () => {
   }
 };
 
-// Ruta para enviar consentimiento por WhatsApp
+// Ruta para enviar consentimiento por WhatsApp - VERSIÓN MEJORADA
 app.post("/whatsapp/enviar-consentimiento/:id", async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`📤 Solicitando envío WhatsApp para consentimiento: ${id}`);
 
-    // Obtener datos del consentimiento firmado
-    const result = await pool.query(
-      `SELECT 
-        cf.*,
-        c.nombre as consentimiento_nombre,
-        p.nombre as profesional_nombre,
-        encode(cf.paciente_firma, 'base64') as paciente_firma_base64
-       FROM consentimientos_firmados cf
-       LEFT JOIN consentimientos c ON cf.idconsto = c.idconsto
-       LEFT JOIN profesionales p ON cf.profesional_id = p.id
-       WHERE cf.id = $1`,
+    // ✅ SOLUCIÓN SIMPLE: Hacer una petición interna al generador de PDFs existente
+    const pdfResponse = await fetch(`http://localhost:${process.env.PORT || 3001}/generar-pdf/${id}`);
+    
+    if (!pdfResponse.ok) {
+      throw new Error(`Error al generar PDF: ${pdfResponse.status}`);
+    }
+
+    const pdfBuffer = await pdfResponse.buffer();
+
+    // Obtener datos del paciente para el mensaje de WhatsApp
+    const pacienteResult = await pool.query(
+      `SELECT paciente_nombre, paciente_telefono, paciente_identificacion 
+       FROM consentimientos_firmados WHERE id = $1`,
       [id]
     );
 
-    if (result.rows.length === 0) {
+    if (pacienteResult.rows.length === 0) {
       return res.status(404).json({ 
         success: false, 
         error: "Consentimiento no encontrado" 
       });
     }
 
-    const consentimiento = result.rows[0];
-    const { paciente_nombre, paciente_identificacion, paciente_telefono } = consentimiento;
+    const paciente = pacienteResult.rows[0];
+    const { paciente_nombre, paciente_telefono, paciente_identificacion } = paciente;
 
     if (!paciente_telefono) {
       return res.status(400).json({
@@ -432,28 +434,6 @@ app.post("/whatsapp/enviar-consentimiento/:id", async (req, res) => {
         error: 'El paciente no tiene número de teléfono registrado'
       });
     }
-
-    // Generar PDF (usamos la misma lógica de arriba)
-    const pdf = new jsPDF();
-    pdf.setFontSize(16);
-    pdf.text("CONSENTIMIENTO INFORMADO", 20, 20);
-    pdf.setFontSize(12);
-    pdf.text(`Paciente: ${paciente_nombre}`, 20, 40);
-    pdf.text(`Identificación: ${paciente_identificacion}`, 20, 50);
-    pdf.text(`Fecha: ${new Date().toLocaleDateString('es-ES')}`, 20, 60);
-    
-    // Agregar firma si existe
-    if (consentimiento.paciente_firma_base64) {
-      pdf.text("Firma del paciente:", 20, 80);
-      try {
-        const imgData = `data:image/png;base64,${consentimiento.paciente_firma_base64}`;
-        pdf.addImage(imgData, 'PNG', 20, 85, 50, 20);
-      } catch (imageError) {
-        pdf.text("[Firma digital del paciente]", 20, 90);
-      }
-    }
-    
-    const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
 
     // Guardar PDF temporalmente
     await ensureTempDir();
@@ -477,10 +457,8 @@ Le compartimos su consentimiento informado que acaba de firmar en nuestra clíni
 ${enlaceDescarga}
 
 *Detalles del documento:*
-• Procedimiento: ${consentimiento.consentimiento_nombre || 'Consentimiento médico'}
 • Fecha: ${new Date().toLocaleDateString('es-ES')}
 • Identificación: ${paciente_identificacion}
-• Profesional: ${consentimiento.profesional_nombre || 'Médico tratante'}
 
 ¡Quedamos atentos a cualquier inquietud!
 
@@ -524,7 +502,7 @@ ${enlaceDescarga}
   }
 });
 
-// Ruta para descargar PDF temporal de WhatsApp
+// Ruta para descargar PDF temporal de WhatsApp (MANTENER IGUAL)
 app.get("/whatsapp/descargar/:id", async (req, res) => {
   try {
     const { id } = req.params;
