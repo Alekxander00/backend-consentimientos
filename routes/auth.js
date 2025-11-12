@@ -122,4 +122,13 @@ router.get("/verificar", autenticarToken, (req, res) => {
   });
 });
 
+// Ruta de salud para auth
+router.get("/health", (req, res) => {
+  res.json({ 
+    status: "OK", 
+    servicio: "Auth", 
+    timestamp: new Date().toISOString() 
+  });
+});
+
 export default router;

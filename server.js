@@ -1,21 +1,24 @@
-// server.js
 import express from "express";
 import cors from "cors";
 import dotenv from "dotenv";
 import healthRoutes from "./health.js";
-import pool from "./db.js"; // ✅ Importar pool directamente
+import pool from "./db.js";
 
 dotenv.config();
 const app = express();
 
 // 🔑 Configurar CORS
 app.use(cors({
-  origin: "*" // en dev lo dejamos abierto, en prod puedes restringir
+  origin: "*",
+  methods: ["GET", "POST", "PUT", "DELETE"],
+  allowedHeaders: ["Content-Type", "Authorization"]
 }));
 
 app.use(express.json({ limit: "10mb" }));
-app.use("/health", healthRoutes);
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
+
+// Health routes
+app.use("/health", healthRoutes);
 
 // health simple y rápido (Railway exige 200)
 app.get("/health", (req, res) => res.send("OK"));
@@ -30,75 +33,84 @@ app.get("/health-db", async (req, res) => {
   }
 });
 
-// // ✅ Nueva ruta para pacientes access - DEFINIDA FUERA DEL BLOQUE ASYNC
-// app.get('/api/pacientes-access', async (req, res) => {
-//   try {
-//     console.log("📥 Solicitud recibida para /api/pacientes-access");
-//     const result = await pool.query('SELECT * FROM pacientes_access ORDER BY paciente_nombre');
-//     console.log(`✅ Se encontraron ${result.rows.length} pacientes`);
-//     res.json(result.rows);
-//   } catch (error) {
-//     console.error('❌ Error al obtener pacientes:', error);
-//     res.status(500).json({ error: 'Error interno del servidor: ' + error.message });
-//   }
-// });
+// Middleware de logging para debug
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
+  if (req.method === 'POST' && req.body) {
+    console.log('Body:', JSON.stringify(req.body).substring(0, 200));
+  }
+  next();
+});
 
-// server.js - AGREGAR ESTAS MODIFICACIONES
-
-// server.js - AGREGAR ESTO en la sección de rutas
 async function start() {
   try {
+    console.log("🚀 Iniciando servidor...");
+    
     // Intentamos cargar rutas
     try {
-        // ✅ AGREGAR WHATSAPP A LAS IMPORTACIONES
-        const auth = (await import("./routes/auth.js")).default;
-        const consentimientos = (await import("./routes/consentimiento.js")).default;
-        const consentimientosFirmados = (await import("./routes/consentimientosFirmados.js")).default;
-        const generarPdf = (await import("./routes/generar-pdf.js")).default;
-        const profesionales = (await import("./routes/profesionales.js")).default;
-        const accessIntegration = (await import("./routes/access-integration.js")).default;
-        const pacientesAccess = (await import("./routes/pacientes-access.js")).default;
-        const accessUpdate = (await import("./routes/access-update.js")).default;
-        const whatsapp = (await import("./routes/whatsapp.js")).default; // ✅ NUEVO
+      console.log("📁 Cargando rutas...");
+      
+      // ✅ CARGAR TODAS LAS RUTAS
+      const auth = (await import("./routes/auth.js")).default;
+      const consentimientos = (await import("./routes/consentimiento.js")).default;
+      const consentimientosFirmados = (await import("./routes/consentimientosFirmados.js")).default;
+      const generarPdf = (await import("./routes/generar-pdf.js")).default;
+      const profesionales = (await import("./routes/profesionales.js")).default;
+      const accessIntegration = (await import("./routes/access-integration.js")).default;
+      const pacientesAccess = (await import("./routes/pacientes-access.js")).default;
+      const accessUpdate = (await import("./routes/access-update.js")).default;
+      const whatsapp = (await import("./routes/whatsapp.js")).default;
 
-        // ✅ REGISTRAR RUTAS (auth PRIMERO)
-        app.use("/auth", auth);
-        app.use("/consentimientos", consentimientos);
-        app.use("/consentimientos-firmados", consentimientosFirmados);
-        app.use("/generar-pdf", generarPdf);
-        app.use("/profesionales", profesionales);
-        app.use("/access-integration", accessIntegration);
-        app.use("/pacientes-access", pacientesAccess);
-        app.use("/access-update", accessUpdate);
-        app.use("/whatsapp", whatsapp); // ✅ NUEVA RUTA WHATSAPP
-        
-        console.log("✅ Todas las rutas cargadas correctamente (incluyendo WhatsApp)");
-      } catch (err) {
-        console.error("⚠️ Error cargando rutas:", err && err.message ? err.message : err);
-      }
+      // ✅ REGISTRAR RUTAS CON PREFIJO /api
+      app.use("/api/auth", auth);
+      app.use("/api/consentimientos", consentimientos);
+      app.use("/api/consentimientos-firmados", consentimientosFirmados);
+      app.use("/api/generar-pdf", generarPdf);
+      app.use("/api/profesionales", profesionales);
+      app.use("/api/access-integration", accessIntegration);
+      app.use("/api/pacientes-access", pacientesAccess);
+      app.use("/api/access-update", accessUpdate);
+      app.use("/api/whatsapp", whatsapp);
+      
+      console.log("✅ Todas las rutas cargadas correctamente");
+      
+      // Ruta de prueba para verificar que las rutas están funcionando
+      app.get("/api/test", (req, res) => {
+        res.json({ 
+          message: "API funcionando correctamente",
+          timestamp: new Date().toISOString()
+        });
+      });
+      
+    } catch (err) {
+      console.error("❌ Error cargando rutas:", err);
+    }
 
     const PORT = process.env.PORT || 4000;
     const HOST = "0.0.0.0";
 
     app.listen(PORT, HOST, () => {
       console.log(`🚀 Servidor en http://${HOST}:${PORT}`);
-      console.log(`🔐 Ruta de autenticación: http://${HOST}:${PORT}/auth/login`);
-      console.log(`📱 Ruta WhatsApp: http://${HOST}:${PORT}/whatsapp/health`); // ✅ NUEVO
+      console.log(`🔐 Ruta de autenticación: http://${HOST}:${PORT}/api/auth/login`);
+      console.log(`🔍 Ruta de prueba: http://${HOST}:${PORT}/api/test`);
+      console.log(`📱 Ruta WhatsApp: http://${HOST}:${PORT}/api/whatsapp/health`);
     });
 
   } catch (err) {
-    console.error("Error arrancando servidor:", err);
+    console.error("❌ Error arrancando servidor:", err);
     process.exit(1);
   }
 }
 
-// Agregar middleware para log de requests
-app.use((req, res, next) => {
-  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
-  if (req.method === 'POST') {
-    console.log('Body:', req.body);
-  }
-  next();
+// Manejo de errores no capturados
+process.on('unhandledRejection', (err) => {
+  console.error('❌ Unhandled Promise Rejection:', err);
+  process.exit(1);
+});
+
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err);
+  process.exit(1);
 });
 
 start();
