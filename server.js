@@ -50,9 +50,8 @@ async function start() {
   try {
     // Intentamos cargar rutas
     try {
-        // ✅ AGREGAR ESTAS IMPORTACIONES
+        // ✅ AGREGAR WHATSAPP A LAS IMPORTACIONES
         const auth = (await import("./routes/auth.js")).default;
-        
         const consentimientos = (await import("./routes/consentimiento.js")).default;
         const consentimientosFirmados = (await import("./routes/consentimientosFirmados.js")).default;
         const generarPdf = (await import("./routes/generar-pdf.js")).default;
@@ -60,6 +59,7 @@ async function start() {
         const accessIntegration = (await import("./routes/access-integration.js")).default;
         const pacientesAccess = (await import("./routes/pacientes-access.js")).default;
         const accessUpdate = (await import("./routes/access-update.js")).default;
+        const whatsapp = (await import("./routes/whatsapp.js")).default; // ✅ NUEVO
 
         // ✅ REGISTRAR RUTAS (auth PRIMERO)
         app.use("/auth", auth);
@@ -70,8 +70,9 @@ async function start() {
         app.use("/access-integration", accessIntegration);
         app.use("/pacientes-access", pacientesAccess);
         app.use("/access-update", accessUpdate);
+        app.use("/whatsapp", whatsapp); // ✅ NUEVA RUTA WHATSAPP
         
-        console.log("✅ Todas las rutas cargadas correctamente");
+        console.log("✅ Todas las rutas cargadas correctamente (incluyendo WhatsApp)");
       } catch (err) {
         console.error("⚠️ Error cargando rutas:", err && err.message ? err.message : err);
       }
@@ -82,6 +83,7 @@ async function start() {
     app.listen(PORT, HOST, () => {
       console.log(`🚀 Servidor en http://${HOST}:${PORT}`);
       console.log(`🔐 Ruta de autenticación: http://${HOST}:${PORT}/auth/login`);
+      console.log(`📱 Ruta WhatsApp: http://${HOST}:${PORT}/whatsapp/health`); // ✅ NUEVO
     });
 
   } catch (err) {
