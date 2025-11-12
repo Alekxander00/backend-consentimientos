@@ -33,6 +33,15 @@ app.get("/health-db", async (req, res) => {
   }
 });
 
+app.get("/test", async (req, res) => {
+  try {
+    await pool.query("SELECT 1");
+    return res.status(200).json({ db: "OK" });
+  } catch (err) {
+    return res.status(500).json({ db: "ERROR", error: err.message });
+  }
+});
+
 // Middleware de logging para debug
 app.use((req, res, next) => {
   console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
