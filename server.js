@@ -92,6 +92,15 @@ async function start() {
   }
 }
 
+// Agregar middleware para log de requests
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  if (req.method === 'POST') {
+    console.log('Body:', req.body);
+  }
+  next();
+});
+
 start();
 
 export default app;
