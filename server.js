@@ -56,6 +56,115 @@ app.use((req, res, next) => {
   next();
 });
 
+// ==================== IMPORTAR EL GENERADOR PROFESIONAL ====================
+
+// Necesitamos importar la lógica de tu generador profesional
+// Como es un módulo ES, usamos importación dinámica
+let generarPDFProfesional;
+
+// Función para cargar el generador profesional
+async function cargarGeneradorPDF() {
+  try {
+    // Importar el módulo de generar-pdf
+    const { default: pdfRouter } = await import('./routes/generar-pdf.js');
+    
+    // Crear una función wrapper que use la lógica del router
+    generarPDFProfesional = async (id) => {
+      try {
+        // Simular una request/response para usar el router existente
+        const mockReq = { params: { id } };
+        let pdfBuffer = null;
+        let error = null;
+        
+        const mockRes = {
+          setHeader: () => {},
+          status: function(code) {
+            this.statusCode = code;
+            return this;
+          },
+          json: function(data) {
+            if (data.error) {
+              error = data.error;
+            }
+            return this;
+          },
+          send: function(buffer) {
+            pdfBuffer = buffer;
+          }
+        };
+        
+        // Ejecutar la ruta del generador profesional
+        await pdfRouter.handle(mockReq, mockRes);
+        
+        if (error) {
+          throw new Error(error);
+        }
+        
+        return pdfBuffer;
+      } catch (err) {
+        console.error('Error en generador profesional:', err);
+        throw err;
+      }
+    };
+    
+    console.log('✅ Generador profesional de PDFs cargado');
+  } catch (error) {
+    console.error('❌ Error cargando generador profesional:', error);
+    // Fallback al generador básico
+    generarPDFProfesional = async (id) => {
+      return await generarPDFBasico(id);
+    };
+  }
+}
+
+// Cargar el generador al iniciar
+cargarGeneradorPDF();
+
+// Generador básico como fallback
+async function generarPDFBasico(id) {
+  const result = await pool.query(
+    `SELECT 
+      cf.*,
+      c.nombre as consentimiento_nombre,
+      p.nombre as profesional_nombre,
+      encode(cf.paciente_firma, 'base64') as paciente_firma_base64
+     FROM consentimientos_firmados cf
+     LEFT JOIN consentimientos c ON cf.idconsto = c.idconsto
+     LEFT JOIN profesionales p ON cf.profesional_id = p.id
+     WHERE cf.id = $1`,
+    [id]
+  );
+
+  if (result.rows.length === 0) {
+    throw new Error("Consentimiento no encontrado");
+  }
+
+  const consentimiento = result.rows[0];
+  const pdf = new jsPDF();
+  
+  // Contenido básico (solo como fallback)
+  pdf.setFontSize(16);
+  pdf.text("CONSENTIMIENTO INFORMADO", 20, 20);
+  pdf.setFontSize(12);
+  pdf.text(`Paciente: ${consentimiento.paciente_nombre}`, 20, 40);
+  pdf.text(`Identificación: ${consentimiento.paciente_identificacion}`, 20, 50);
+  pdf.text(`Procedimiento: ${consentimiento.consentimiento_nombre}`, 20, 60);
+  
+  if (consentimiento.paciente_firma_base64) {
+    pdf.text("Firma del paciente:", 20, 80);
+    try {
+      const imgData = `data:image/png;base64,${consentimiento.paciente_firma_base64}`;
+      pdf.addImage(imgData, 'PNG', 20, 85, 50, 20);
+    } catch (imageError) {
+      pdf.text("[Firma digital]", 20, 90);
+    }
+  }
+  
+  return Buffer.from(pdf.output('arraybuffer'));
+}
+
+
+
 // ==================== RUTAS BÁSICAS ====================
 
 // Health check
@@ -384,7 +493,7 @@ app.get("/generar-pdf/:id", async (req, res) => {
   }
 });
 
-// ==================== WHATSAPP ====================
+// ==================== WHATSAPP CON PDF PROFESIONAL ====================
 
 const TEMP_DIR = './temp_pdfs';
 
@@ -396,39 +505,28 @@ const ensureTempDir = async () => {
   }
 };
 
-// Ruta para enviar consentimiento por WhatsApp - VERSIÓN CORREGIDA
+// Ruta para enviar consentimiento por WhatsApp - CON PDF PROFESIONAL
 app.post("/whatsapp/enviar-consentimiento/:id", async (req, res) => {
   try {
     const { id } = req.params;
     console.log(`📤 Solicitando envío WhatsApp para consentimiento: ${id}`);
 
-    // ✅ SOLUCIÓN: Usar la misma lógica de generación de PDFs que ya tienes
-    // Obtener datos del consentimiento firmado
-    const result = await pool.query(
-      `SELECT 
-        cf.*,
-        c.nombre as consentimiento_nombre,
-        p.nombre as profesional_nombre,
-        p.identificacion as profesional_identificacion,
-        p.especialidad as profesional_especialidad,
-        p.registro_profesional,
-        encode(cf.paciente_firma, 'base64') as paciente_firma_base64
-       FROM consentimientos_firmados cf
-       LEFT JOIN consentimientos c ON cf.idconsto = c.idconsto
-       LEFT JOIN profesionales p ON cf.profesional_id = p.id
-       WHERE cf.id = $1`,
+    // Obtener datos del paciente para el mensaje
+    const pacienteResult = await pool.query(
+      `SELECT paciente_nombre, paciente_telefono, paciente_identificacion 
+       FROM consentimientos_firmados WHERE id = $1`,
       [id]
     );
 
-    if (result.rows.length === 0) {
+    if (pacienteResult.rows.length === 0) {
       return res.status(404).json({ 
         success: false, 
         error: "Consentimiento no encontrado" 
       });
     }
 
-    const consentimiento = result.rows[0];
-    const { paciente_nombre, paciente_telefono, paciente_identificacion } = consentimiento;
+    const paciente = pacienteResult.rows[0];
+    const { paciente_nombre, paciente_telefono, paciente_identificacion } = paciente;
 
     if (!paciente_telefono) {
       return res.status(400).json({
@@ -437,32 +535,16 @@ app.post("/whatsapp/enviar-consentimiento/:id", async (req, res) => {
       });
     }
 
-    // ✅ GENERAR PDF CON LA MISMA LÓGICA QUE /generar-pdf/:id
-    const pdf = new jsPDF();
-    
-    // Agregar contenido al PDF (mismo que tu ruta /generar-pdf)
-    pdf.setFontSize(16);
-    pdf.text("CONSENTIMIENTO INFORMADO", 20, 20);
-    
-    pdf.setFontSize(12);
-    pdf.text(`Paciente: ${consentimiento.paciente_nombre}`, 20, 40);
-    pdf.text(`Identificación: ${consentimiento.paciente_identificacion}`, 20, 50);
-    pdf.text(`Procedimiento: ${consentimiento.consentimiento_nombre || 'Consentimiento médico'}`, 20, 60);
-    pdf.text(`Profesional: ${consentimiento.profesional_nombre || 'Médico tratante'}`, 20, 70);
-    pdf.text(`Fecha: ${new Date().toLocaleDateString('es-ES')}`, 20, 80);
-    
-    // Agregar firma si existe
-    if (consentimiento.paciente_firma_base64) {
-      pdf.text("Firma del paciente:", 20, 100);
-      try {
-        const imgData = `data:image/png;base64,${consentimiento.paciente_firma_base64}`;
-        pdf.addImage(imgData, 'PNG', 20, 105, 50, 20);
-      } catch (imageError) {
-        pdf.text("[Firma digital del paciente]", 20, 110);
-      }
+    // ✅ USAR EL GENERADOR PROFESIONAL CON PLANTILLAS
+    let pdfBuffer;
+    try {
+      console.log('🔄 Generando PDF profesional con plantillas...');
+      pdfBuffer = await generarPDFProfesional(id);
+      console.log('✅ PDF profesional generado exitosamente');
+    } catch (error) {
+      console.error('❌ Error con generador profesional, usando fallback:', error);
+      pdfBuffer = await generarPDFBasico(id);
     }
-    
-    const pdfBuffer = Buffer.from(pdf.output('arraybuffer'));
 
     // Guardar PDF temporalmente
     await ensureTempDir();
@@ -488,7 +570,6 @@ ${enlaceDescarga}
 *Detalles del documento:*
 • Fecha: ${new Date().toLocaleDateString('es-ES')}
 • Identificación: ${paciente_identificacion}
-• Procedimiento: ${consentimiento.consentimiento_nombre || 'Consentimiento médico'}
 
 ¡Quedamos atentos a cualquier inquietud!
 
@@ -498,7 +579,6 @@ ${enlaceDescarga}
     // Generar enlace de WhatsApp
     const numeroLimpio = paciente_telefono.toString().replace(/[\s\(\)\-+]/g, '');
     
-    // Validar formato de número
     if (!/^\d{10,15}$/.test(numeroLimpio)) {
       return res.status(400).json({
         success: false,
@@ -509,7 +589,7 @@ ${enlaceDescarga}
     const mensajeCodificado = encodeURIComponent(mensaje);
     const enlaceWhatsApp = `https://wa.me/${numeroLimpio}?text=${mensajeCodificado}`;
 
-    console.log(`✅ WhatsApp preparado para: ${paciente_nombre} (${paciente_telefono})`);
+    console.log(`✅ WhatsApp preparado con PDF profesional para: ${paciente_nombre}`);
 
     res.json({
       success: true,
@@ -538,7 +618,6 @@ app.get("/whatsapp/descargar/:id", async (req, res) => {
     const { id } = req.params;
     const archivoPath = path.join(TEMP_DIR, `consentimiento_${id}.pdf`);
 
-    // Verificar que el archivo existe
     try {
       await fs.access(archivoPath);
     } catch {
@@ -548,18 +627,16 @@ app.get("/whatsapp/descargar/:id", async (req, res) => {
       });
     }
 
-    // Configurar headers para descarga
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `attachment; filename="consentimiento_${id}.pdf"`);
     
-    // Enviar archivo
     const fileBuffer = await fs.readFile(archivoPath);
     res.send(fileBuffer);
 
-    console.log(`📤 PDF temporal descargado: ${id}`);
+    console.log(`📤 PDF profesional descargado: ${id}`);
 
   } catch (error) {
-    console.error("❌ Error descargando PDF temporal:", error);
+    console.error("❌ Error descargando PDF:", error);
     res.status(500).json({ 
       success: false, 
       error: "Error al descargar archivo" 
