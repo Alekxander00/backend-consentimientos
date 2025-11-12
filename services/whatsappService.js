@@ -2,14 +2,14 @@ import fs from 'fs/promises';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { v4 as uuidv4 } from 'uuid';
+import pool from '../db.js';
+import fetch from 'node-fetch'; // Para hacer requests internos
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Directorio temporal para PDFs
 const TEMP_DIR = path.join(__dirname, '..', 'temp_pdfs');
 
-// Asegurar que el directorio temporal existe
 const ensureTempDir = async () => {
   try {
     await fs.access(TEMP_DIR);
@@ -18,7 +18,6 @@ const ensureTempDir = async () => {
   }
 };
 
-// Limpiar archivos temporales antiguos (más de 1 hora)
 const cleanupOldFiles = async () => {
   try {
     const files = await fs.readdir(TEMP_DIR);
@@ -39,7 +38,6 @@ const cleanupOldFiles = async () => {
   }
 };
 
-// Guardar PDF temporalmente
 export const guardarPDFTemporal = async (pdfBuffer, nombreOriginal) => {
   await ensureTempDir();
   
@@ -50,37 +48,54 @@ export const guardarPDFTemporal = async (pdfBuffer, nombreOriginal) => {
 
   await fs.writeFile(rutaArchivo, pdfBuffer);
   
-  // Limpiar archivos antiguos en segundo plano
   cleanupOldFiles().catch(console.error);
   
   return { idUnico, nombreArchivo, rutaArchivo };
 };
 
-// Generar enlace WhatsApp
 export const generarEnlaceWhatsApp = (numero, mensaje) => {
   if (!numero) {
     throw new Error('Número de teléfono requerido');
   }
 
-  // Limpiar y formatear número
   const numeroLimpio = numero.toString().replace(/[\s\(\)\-+]/g, '');
   
-  // Validar formato (debe tener entre 10-15 dígitos)
   if (!/^\d{10,15}$/.test(numeroLimpio)) {
     throw new Error('Formato de número inválido');
   }
 
-  // Codificar mensaje
   const mensajeCodificado = encodeURIComponent(mensaje);
   
-  // Generar enlace
   return `https://wa.me/${numeroLimpio}?text=${mensajeCodificado}`;
 };
 
-// Servicio principal para enviar consentimiento por WhatsApp
-export const enviarConsentimientoWhatsApp = async (consentimientoFirmado, pdfBuffer) => {
+// ✅ SERVICIO MEJORADO QUE GENERA EL PDF REAL
+export const enviarConsentimientoWhatsApp = async (consentimientoId) => {
   try {
-    const { paciente_nombre, paciente_identificacion, paciente_telefono } = consentimientoFirmado;
+    console.log(`📄 Generando PDF real para consentimiento: ${consentimientoId}`);
+    
+    // Obtener datos del consentimiento
+    const result = await pool.query(
+      `SELECT 
+        cf.*,
+        c.nombre as consentimiento_nombre,
+        p.nombre as profesional_nombre,
+        p.especialidad as profesional_especialidad,
+        p.registro_profesional,
+        encode(cf.paciente_firma, 'base64') as paciente_firma_base64
+       FROM consentimientos_firmados cf
+       LEFT JOIN consentimientos c ON cf.idconsto = c.idconsto
+       LEFT JOIN profesionales p ON cf.profesional_id = p.id
+       WHERE cf.id = $1`,
+      [consentimientoId]
+    );
+
+    if (result.rows.length === 0) {
+      throw new Error('Consentimiento no encontrado');
+    }
+
+    const consentimiento = result.rows[0];
+    const { paciente_nombre, paciente_identificacion, paciente_telefono } = consentimiento;
     
     if (!paciente_telefono) {
       return {
@@ -89,12 +104,22 @@ export const enviarConsentimientoWhatsApp = async (consentimientoFirmado, pdfBuf
       };
     }
 
+    // ✅ GENERAR EL PDF REAL usando la ruta existente de generar-pdf
+    const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+    const pdfResponse = await fetch(`${baseUrl}/api/generar-pdf/${consentimientoId}`);
+    
+    if (!pdfResponse.ok) {
+      throw new Error(`Error al generar PDF: ${pdfResponse.statusText}`);
+    }
+
+    // Obtener el buffer del PDF real
+    const pdfBuffer = await pdfResponse.buffer();
+
     // Guardar PDF temporalmente
     const nombreArchivo = `consentimiento_${paciente_identificacion || 'sin_id'}.pdf`;
-    const { idUnico, nombreArchivo: nombreGuardado } = await guardarPDFTemporal(pdfBuffer, nombreArchivo);
+    const { idUnico } = await guardarPDFTemporal(pdfBuffer, nombreArchivo);
 
-    // Generar enlace de descarga (usaremos una ruta específica)
-    const baseUrl = process.env.BASE_URL || 'http://localhost:4000';
+    // Generar enlace de descarga
     const enlaceDescarga = `${baseUrl}/api/whatsapp/descargar/${idUnico}`;
 
     // Crear mensaje personalizado
@@ -102,34 +127,43 @@ export const enviarConsentimientoWhatsApp = async (consentimientoFirmado, pdfBuf
 
 📄 *Consentimiento Informado Firmado*
 
-Le compartimos su consentimiento informado que acaba de firmar.
+Le compartimos su consentimiento informado que acaba de firmar en nuestra clínica.
 
-*Enlace de descarga:* 
+*Enlace de descarga del documento:* 
 ${enlaceDescarga}
 
-*Detalles:*
-• Documento: Consentimiento médico
+*Detalles del documento:*
+• Procedimiento: ${consentimiento.consentimiento_nombre || 'Consentimiento médico'}
 • Fecha: ${new Date().toLocaleDateString('es-ES')}
 • Identificación: ${paciente_identificacion}
+• Profesional: ${consentimiento.profesional_nombre || 'Médico tratante'}
 
 *Instrucciones:*
 1. Haga clic en el enlace de arriba
-2. Descargue el PDF
-3. Guárdelo en su dispositivo
+2. Descargue el PDF 
+3. Consérvelo en sus archivos
 
 ¡Quedamos atentos a cualquier inquietud!
 
-*Clínica Oftalmológica*`;
+*Clínica Oftalmológica*
+*Equipo Médico*`;
 
     // Generar enlace de WhatsApp
     const enlaceWhatsApp = generarEnlaceWhatsApp(paciente_telefono, mensaje);
+    
+    console.log(`✅ PDF real generado y listo para WhatsApp: ${consentimientoId}`);
     
     return {
       success: true,
       enlaceWhatsApp,
       enlaceDescarga,
       mensaje: mensaje,
-      idTemporal: idUnico
+      idTemporal: idUnico,
+      datosPaciente: {
+        nombre: paciente_nombre,
+        telefono: paciente_telefono,
+        identificacion: paciente_identificacion
+      }
     };
   } catch (error) {
     console.error('❌ Error en servicio WhatsApp:', error);
